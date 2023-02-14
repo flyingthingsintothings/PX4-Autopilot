@@ -131,7 +131,6 @@ private:
 			updated |= write_fw_ctrl_status_if_updated(&msg);
 			updated |= write_geofence_result_if_updated(&msg);
 			updated |= write_global_position_if_updated(&msg);
-			updated |= write_heading_if_updated(&msg);
 			updated |= write_mission_result_if_updated(&msg);
 			updated |= write_failsafe_flags(&msg);
 
