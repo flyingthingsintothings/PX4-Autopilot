@@ -2634,7 +2634,7 @@ int Commander::task_spawn(int argc, char *argv[])
 	_task_id = px4_task_spawn_cmd("commander",
 				      SCHED_DEFAULT,
 				      SCHED_PRIORITY_DEFAULT + 40,
-				      PX4_STACK_ADJUSTED(3250),
+				      3250,
 				      (px4_main_t)&run_trampoline,
 				      (char *const *)argv);
 
@@ -2676,13 +2676,13 @@ void Commander::dataLinkCheck()
 	iridiumsbd_status_s iridium_status;
 
 	if (_iridiumsbd_status_sub.update(&iridium_status)) {
-		_high_latency_datalink_timestamp = iridium_status.last_at_ok_timestamp;
+		_high_latency_datalink_heartbeat = iridium_status.last_heartbeat;
 
 		if (_vehicle_status.high_latency_data_link_lost &&
-		    (_high_latency_datalink_timestamp > _high_latency_datalink_lost) &&
+		    (_high_latency_datalink_heartbeat > _high_latency_datalink_lost) &&
 		    (_high_latency_datalink_regained == 0)
 		   ) {
-			_high_latency_datalink_regained = _high_latency_datalink_timestamp;
+			_high_latency_datalink_regained = _high_latency_datalink_heartbeat;
 		}
 
 		if (_vehicle_status.high_latency_data_link_lost &&
@@ -2708,10 +2708,10 @@ void Commander::dataLinkCheck()
 
 			case telemetry_status_s::LINK_TYPE_IRIDIUM: {
 
-					if ((_high_latency_datalink_timestamp > 0) &&
-					    (hrt_elapsed_time(&_high_latency_datalink_timestamp) > (_param_com_hldl_loss_t.get() * 1_s))) {
+					if ((_high_latency_datalink_heartbeat > 0) &&
+					    (hrt_elapsed_time(&_high_latency_datalink_heartbeat) > (_param_com_hldl_loss_t.get() * 1_s))) {
 
-						_high_latency_datalink_lost = _high_latency_datalink_timestamp;
+						_high_latency_datalink_lost = _high_latency_datalink_heartbeat;
 						_high_latency_datalink_regained = 0;
 
 						if (!_vehicle_status.high_latency_data_link_lost) {
