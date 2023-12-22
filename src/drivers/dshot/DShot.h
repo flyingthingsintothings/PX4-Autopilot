@@ -133,8 +133,6 @@ private:
 
 	int handle_new_telemetry_data(const int telemetry_index, const DShotTelemetry::EscData &data);
 
-	void publish_esc_status(void);
-
 	int handle_new_bdshot_erpm(void);
 
 	int request_esc_info();
@@ -162,7 +160,7 @@ private:
 	bool _outputs_initialized{false};
 	bool _outputs_on{false};
 	bool _waiting_for_esc_info{false};
-	bool _bidirectional_dshot_enabled{false};
+	bool _bdshot{false};
 
 	static constexpr unsigned _num_outputs{DIRECT_PWM_OUTPUT_CHANNELS};
 	uint32_t _output_mask{0};

@@ -152,22 +152,6 @@ int up_dshot_init(uint32_t channel_mask, unsigned dshot_pwm_freq, bool enable_bi
 	return ret_val == OK ? channels_init_mask : ret_val;
 }
 
-int up_bdshot_get_erpm(uint8_t channel, int *erpm)
-{
-	// Not implemented
-	return -1;
-}
-
-int up_bdshot_channel_status(uint8_t channel)
-{
-	// Not implemented
-	return -1;
-}
-
-void up_bdshot_status(void)
-{
-}
-
 void up_dshot_trigger(void)
 {
 	for (uint8_t timer = 0; (timer < DSHOT_TIMERS); timer++) {

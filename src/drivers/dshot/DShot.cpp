@@ -144,9 +144,9 @@ void DShot::enable_dshot_outputs(const bool enabled)
 			}
 		}
 
-		_bidirectional_dshot_enabled = _param_bidirectional_enable.get();
+		_bdshot = _param_bidirectional_enable.get();
 
-		int ret = up_dshot_init(_output_mask, dshot_frequency, _bidirectional_dshot_enabled);
+		int ret = up_dshot_init(_output_mask, dshot_frequency, _bdshot);
 
 		if (ret < 0) {
 			PX4_ERR("up_dshot_init failed (%i)", ret);
@@ -159,7 +159,6 @@ void DShot::enable_dshot_outputs(const bool enabled)
 		for (unsigned i = 0; i < _num_outputs; ++i) {
 			if (((1 << i) & _output_mask) == 0) {
 				_mixing_output.disableFunction(i);
-
 			}
 		}
 
@@ -171,7 +170,7 @@ void DShot::enable_dshot_outputs(const bool enabled)
 
 		_outputs_initialized = true;
 
-		if (_bidirectional_dshot_enabled) {
+		if (_bdshot) {
 			init_telemetry(NULL);
 		}
 	}
@@ -249,8 +248,15 @@ int DShot::handle_new_telemetry_data(const int telemetry_index, const DShotTelem
 		esc_status.esc_connectiontype = esc_status_s::ESC_CONNECTION_TYPE_DSHOT;
 		esc_status.esc_count = _telemetry->handler.numMotors();
 		++esc_status.counter;
+		// FIXME: mark all ESC's as online, otherwise commander complains even for a single dropout
+		esc_status.esc_online_flags = (1 << esc_status.esc_count) - 1;
+		esc_status.esc_armed_flags = (1 << esc_status.esc_count) - 1;
 
 		ret = 1; // Indicate we wrapped, so we publish data
+
+		// reset esc data (in case a motor times out, so we won't send stale data)
+		memset(&esc_status.esc, 0, sizeof(_telemetry->esc_status_pub.get().esc));
+		esc_status.esc_online_flags = 0;
 	}
 
 	_telemetry->last_telemetry_index = telemetry_index;
@@ -258,50 +264,11 @@ int DShot::handle_new_telemetry_data(const int telemetry_index, const DShotTelem
 	return ret;
 }
 
-void DShot::publish_esc_status(void)
-{
-	esc_status_s &esc_status = _telemetry->esc_status_pub.get();
-	int telemetry_index = 0;
-
-	// clear data of the esc that are offline
-	for (int index = 0; (index < _telemetry->last_telemetry_index); index++) {
-		if ((esc_status.esc_online_flags & (1 << index)) == 0) {
-			memset(&esc_status.esc[index], 0, sizeof(struct esc_report_s));
-		}
-	}
-
-	// FIXME: mark all UART Telemetry ESC's as online, otherwise commander complains even for a single dropout
-	esc_status.esc_count = _telemetry->handler.numMotors();
-	esc_status.esc_online_flags = (1 << esc_status.esc_count) - 1;
-	esc_status.esc_armed_flags = (1 << esc_status.esc_count) - 1;
-
-	if (_bidirectional_dshot_enabled) {
-		for (unsigned i = 0; i < _num_outputs; i++) {
-			if (_mixing_output.isFunctionSet(i)) {
-				if (up_bdshot_channel_status(i)) {
-					esc_status.esc_online_flags |= 1 << i;
-
-				} else {
-					esc_status.esc_online_flags &= ~(1 << i);
-				}
-
-				++telemetry_index;
-			}
-		}
-	}
-
-	// ESC telem wrap around or bdshot update
-	_telemetry->esc_status_pub.update();
-
-	// reset esc online flags
-	esc_status.esc_online_flags = 0;
-}
-
 int DShot::handle_new_bdshot_erpm(void)
 {
 	int num_erpms = 0;
-	int telemetry_index = 0;
 	int erpm;
+	uint8_t channel;
 	esc_status_s &esc_status = _telemetry->esc_status_pub.get();
 
 	esc_status.timestamp = hrt_absolute_time();
@@ -309,21 +276,17 @@ int DShot::handle_new_bdshot_erpm(void)
 	esc_status.esc_connectiontype = esc_status_s::ESC_CONNECTION_TYPE_DSHOT;
 	esc_status.esc_armed_flags = _outputs_on;
 
-	for (unsigned i = 0; i < _num_outputs; i++) {
-		if (_mixing_output.isFunctionSet(i)) {
-			if (up_bdshot_get_erpm(i, &erpm) == 0) {
-				num_erpms++;
-				esc_status.esc_online_flags |= 1 << telemetry_index;
-				esc_status.esc[telemetry_index].timestamp = hrt_absolute_time();
-				esc_status.esc[telemetry_index].esc_rpm = (erpm * 100) / (_param_mot_pole_count.get() / 2);
-				esc_status.esc[telemetry_index].actuator_function = _telemetry->actuator_functions[telemetry_index];
-			}
-
-			++telemetry_index;
+	for (channel = 0; channel < 8; channel++) {
+		if (up_bdshot_get_erpm(channel, &erpm) == 0) {
+			num_erpms++;
+			esc_status.esc[channel].timestamp = hrt_absolute_time();
+			esc_status.esc[channel].esc_rpm = (erpm * 100) /
+							  (_param_mot_pole_count.get() / 2);
 		}
 
-
 	}
+
+	esc_status.esc_count = num_erpms;
 
 	return num_erpms;
 }
@@ -551,14 +514,14 @@ void DShot::Run()
 			need_to_publish = handle_new_telemetry_data(telem_update, _telemetry->handler.latestESCData());
 		}
 
-		if (_bidirectional_dshot_enabled) {
+		if (_bdshot) {
 			// Add bdshot data to esc status
 			need_to_publish += handle_new_bdshot_erpm();
 		}
 
 		if (need_to_publish > 0) {
 			// ESC telem wrap around or bdshot update
-			publish_esc_status();
+			_telemetry->esc_status_pub.update();
 		}
 	}
 
@@ -801,9 +764,7 @@ int DShot::print_status()
 	}
 
 	/* Print dshot status */
-	if (_bidirectional_dshot_enabled) {
-		up_bdshot_status();
-	}
+	up_bdshot_status();
 
 	return 0;
 }
