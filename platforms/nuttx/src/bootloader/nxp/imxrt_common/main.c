@@ -432,6 +432,7 @@ flash_func_erase_sector(unsigned sector, bool force)
 		return;
 	}
 
+<<<<<<< HEAD
 	if (force || up_progmem_ispageerased(sector) != 0) {
 
 		struct flexspi_nor_config_s *pConfig = &g_bootConfig;
@@ -439,6 +440,11 @@ flash_func_erase_sector(unsigned sector, bool force)
 		const uint32_t bytes_per_sector =  flash_func_sector_size(sector);
 		uint32_t *address = (uint32_t *)(IMXRT_FLEXSPI1_CIPHER_BASE + (sector * bytes_per_sector));
 
+=======
+	if (force || flash_func_is_sector_blank(sector) != 0) {
+		struct flexspi_nor_config_s *pConfig = &g_bootConfig;
+
+>>>>>>> 21e550fdba (tools/bootloader: add force-erase option)
 		uintptr_t offset = ((uintptr_t) address) - IMXRT_FLEXSPI1_CIPHER_BASE;
 		irqstate_t flags;
 		flags = enter_critical_section();
