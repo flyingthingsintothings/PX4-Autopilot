@@ -1,0 +1,5 @@
+menuconfig DRIVERS_GPS_SEPTENTRIO
+	bool "septentrio"
+	default n
+	---help---
+		Enable support for Septentrio receivers

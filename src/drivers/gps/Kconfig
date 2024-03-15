@@ -1,12 +1,16 @@
-menuconfig DRIVERS_GPS
-	bool "gps"
-	default n
-	---help---
-		Enable support for gps
+menu "GPS"
+    menuconfig DRIVERS_GPS
+        bool "gps"
+        default n
+        ---help---
+            Enable support for gps
 
-menuconfig USER_GPS
-	bool "gps running as userspace module"
-	default y
-	depends on BOARD_PROTECTED && DRIVERS_GPS
-	---help---
-		Put gps in userspace memory
+    menuconfig USER_GPS
+        bool "gps running as userspace module"
+        default y
+        depends on BOARD_PROTECTED && DRIVERS_GPS
+        ---help---
+            Put gps in userspace memory
+
+    rsource "*/Kconfig"
+endmenu #GPS
