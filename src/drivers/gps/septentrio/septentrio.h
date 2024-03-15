@@ -105,9 +105,10 @@ enum class SeptentrioGPSOutputMode {
 	GPSAndRTCM,	/**< GPS and RTCM output */
 }
 
-class SeptentrioGPS : public ModuleBase<SeptentrioGPS>, public device::Device {
+class SeptentrioGPS : public ModuleBase<SeptentrioGPS>, public device::Device
+{
 public:
-	SeptentrioGPS(const char* device_path);
+	SeptentrioGPS(const char *device_path);
 	~SeptentrioGPS() override;
 
 	int print_status() override;
@@ -223,7 +224,7 @@ private:
 	 *
 	 * @return the number of bytes written on success, or -1 otherwise
 	*/
-	int write(const void* buf, int buf_length);
+	int write(const void *buf, int buf_length);
 
 	/**
 	 * @brief Dump GPS communication.
@@ -240,20 +241,20 @@ private:
 	px4::atomic<SeptentrioGPSResetType>		_scheduled_reset{SeptentrioGPSResetType::None};			///< The type of receiver reset that is scheduled
 	sbf_decode_state_t				_decode_state{SBF_DECODE_SYNC1};				///< State of the SBF parser
 	int						_serial_fd{-1};							///< The file descriptor used for communication with the receiver
-	char						_port[20]{};							///< The path of the used serial device
+	char						_port[20] {};							///< The path of the used serial device
 	bool						_configured{false};						///< Configuration status of the connected receiver
 	uint64_t 					_last_timestamp_time{0};					/// TODO: Document
 	uint8_t 					_msg_status{0};							/// TODO: Document
 	uint16_t 					_rx_payload_index{0};						/// TODO: Document
 	sbf_buf_t 					_buf;								/// TODO: Document
 	OutputMode 					_output_mode{OutputMode::GPS};					/// TODO: Document
-	RTCMParsing*					_rtcm_parsing{nullptr};						/// TODO: Document
-	satellite_info_s*				_p_report_sat_info{nullptr};					///< Pointer to uORB topic for satellite info
+	RTCMParsing					*_rtcm_parsing{nullptr};						/// TODO: Document
+	satellite_info_s				*_p_report_sat_info{nullptr};					///< Pointer to uORB topic for satellite info
 	unsigned					_rate_reading{0}; 						///< Reading rate in B/s
 	sensor_gps_s					_report_gps_pos{};						///< uORB topic for gps position
-	GPSSatelliteInfo*				_sat_info{nullptr};						///< Instance of GPS sat info data object
-	gps_dump_s* 					_dump_to_device{nullptr};					/// TODO: Document
-	gps_dump_s* 					_dump_from_device{nullptr};					/// TODO: Document
+	GPSSatelliteInfo				*_sat_info{nullptr};						///< Instance of GPS sat info data object
+	gps_dump_s 					*_dump_to_device{nullptr};					/// TODO: Document
+	gps_dump_s 					*_dump_from_device{nullptr};					/// TODO: Document
 	uORB::PublicationMulti<sensor_gps_s> 		_report_gps_pos_pub{ORB_ID(sensor_gps)};			///< uORB pub for gps position
 	uORB::PublicationMulti<satellite_info_s>	_report_sat_info_pub{ORB_ID(satellite_info)};			///< uORB pub for satellite info
 	uORB::PublicationMulti<sensor_gnss_relative_s>	_sensor_gnss_relative_pub{ORB_ID(sensor_gnss_relative)};	/// TODO: Document

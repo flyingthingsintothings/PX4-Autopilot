@@ -105,7 +105,7 @@
 #define SBF_CONFIG_RTCM_STATIC_OFFSET "" \
 	"setAntennaOffset, Main, %f, %f, %f\n"
 
-SeptentrioGPS::SeptentrioGPS(const char* device_path) :
+SeptentrioGPS::SeptentrioGPS(const char *device_path) :
 	Device(MODULE_NAME)
 {
 	strncpy(_port, device_path, sizeof(_port) - 1);
@@ -209,11 +209,11 @@ int SeptentrioGPS::task_spawn(int argc, char *argv[])
 	static constexpr int TASK_STACK_SIZE = PX4_STACK_ADJUSTED(2040);
 
 	_task_id = px4_task_spawn_cmd("septentrio",
-					SCHED_DEFAULT,
-					SCHED_PRIORITY_SLOW_DRIVER,
-					TASK_STACK_SIZE,
-					&run_trampoline,
-					(char *const *)argv);
+				      SCHED_DEFAULT,
+				      SCHED_PRIORITY_SLOW_DRIVER,
+				      TASK_STACK_SIZE,
+				      &run_trampoline,
+				      (char *const *)argv);
 
 	if (_task_id < 0) {
 		_task_id = 1;
@@ -223,23 +223,25 @@ int SeptentrioGPS::task_spawn(int argc, char *argv[])
 	return 0;
 }
 
-SeptentrioGPS* SeptentrioGPS::instantiate(int argc, char *argv[])
+SeptentrioGPS *SeptentrioGPS::instantiate(int argc, char *argv[])
 {
-	const char* device_path = nullptr;
-	SeptentrioGPS* gps = nullptr;
+	const char *device_path = nullptr;
+	SeptentrioGPS *gps = nullptr;
 	bool error_flag = false;
 	int ch;
 	int myoptind = 1;
-	const char* myoptarg = nullptr;
+	const char *myoptarg = nullptr;
 
 	while ((ch = px4_getopt(argc, argv, "b:d:", &myoptind, &myoptarg)) != EOF) {
 		switch (ch) {
 		case 'd':
 			device_path = myoptarg;
 			break;
+
 		case '?':
 			error_flag = true;
 			break;
+
 		default:
 			PX4_WARN("unrecognized flag");
 			error_flag = true;
@@ -251,8 +253,9 @@ SeptentrioGPS* SeptentrioGPS::instantiate(int argc, char *argv[])
 		return nullptr;
 	}
 
-	if (device_path && (access(device_path, R_OK|W_OK) == 0)) {
+	if (device_path && (access(device_path, R_OK | W_OK) == 0)) {
 		gps = new SeptentrioGPS(device_path);
+
 	} else {
 		PX4_ERR("invalid device (-d) %s", device_path ? device_path : "");
 	}
@@ -263,7 +266,7 @@ SeptentrioGPS* SeptentrioGPS::instantiate(int argc, char *argv[])
 // TODO: Make sure all the required commands are available!
 // Called from outside driver thread.
 // Returns 0 on success, -1 otherwise.
-int SeptentrioGPS::custom_command(int argc, char* argv[])
+int SeptentrioGPS::custom_command(int argc, char *argv[])
 {
 	if (!is_running()) {
 		PX4_INFO("not running");
