@@ -31,6 +31,8 @@
  *
  ****************************************************************************/
 
+#pragma once
+
 /**
  * @file sbf.h
  * @brief Septentrio binary format (SBF) protocol definitions.

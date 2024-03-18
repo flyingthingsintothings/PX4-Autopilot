@@ -43,6 +43,7 @@ parameters:
           2: Galileo
           3: BeiDou
           4: GLONASS
+        type: bitmask
         default: 0
         min: 0
         max: 31
@@ -57,6 +58,7 @@ parameters:
             This occurs in situations where the two antenna ARPs may not be exactly at the same height in the vehicle reference frame.
             Since pitch is defined as the right-handed rotation about the vehicle Y axis,
             a situation where the main antenna is mounted lower than the aux antenna (assuming the default antenna setup) will result in a positive pitch.
+        type: float
         decimal: 3
         default: 0
         min: -90
@@ -72,6 +74,7 @@ parameters:
 
             If this is set to 2, the main GPS is configured to output RTCM data,
             which is then logged as gps_dump and can be used for PPK.
+        type: enum
         default: 0
         min: 0
         max: 2
