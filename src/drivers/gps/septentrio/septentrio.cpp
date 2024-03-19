@@ -49,6 +49,7 @@
 #include <px4_platform_common/time.h>
 #include <drivers/drv_hrt.h>
 #include <uORB/topics/gps_inject_data.h>
+#include <termios.h>
 
 #include "septentrio.h"
 #include "util.h"
@@ -922,7 +923,7 @@ void SeptentrioGPS::decode_init()
 	_decode_state = SBF_DECODE_SYNC1;
 	_rx_payload_index = 0;
 
-	if (_output_mode == OutputMode::GPSAndRTCM) {
+	if (_output_mode == SeptentrioGPSOutputMode::GPSAndRTCM) {
 		if (!_rtcm_parsing) {
 			_rtcm_parsing = new RTCMParsing();
 		}
@@ -938,7 +939,7 @@ bool SeptentrioGPS::send_message(const char *msg)
 	SBF_DEBUG("Send MSG: %s", msg);
 	int length = strlen(msg);
 
-	return (write(msg, length) == length);
+	return (write(reinterpret_cast<const uint8_t*>(msg), length) == length);
 }
 
 bool SeptentrioGPS::send_message_and_wait_for_ack(const char *msg, const int timeout)
@@ -947,7 +948,7 @@ bool SeptentrioGPS::send_message_and_wait_for_ack(const char *msg, const int tim
 
 	int length = strlen(msg);
 
-	if (write(msg, length) != length) {
+	if (write(reinterpret_cast<const uint8_t*>(msg), length) != length) {
 		return false;
 	}
 
@@ -956,7 +957,7 @@ bool SeptentrioGPS::send_message_and_wait_for_ack(const char *msg, const int tim
 	// of the command as entered by the user, preceded with "$R:"
 	char buf[GPS_READ_BUFFER_SIZE];
 	size_t offset = 1;
-	gps_abstime time_started = hrt_absolute_time();
+	hrt_abstime time_started = hrt_absolute_time();
 
 	bool found_response = false;
 
@@ -1000,7 +1001,7 @@ int SeptentrioGPS::receive(unsigned timeout)
 	}
 
 	// timeout additional to poll
-	gps_abstime time_started = hrt_absolute_time();
+	hrt_abstime time_started = hrt_absolute_time();
 
 	while (true) {
 		// Wait for only SBF_PACKET_TIMEOUT if something already received.
@@ -1016,7 +1017,7 @@ int SeptentrioGPS::receive(unsigned timeout)
 
 			// pass received bytes to the packet decoder
 			for (int i = 0; i < ret; i++) {
-				handled |= parseChar(buf[i]);
+				handled |= parse_char(buf[i]);
 				SBF_DEBUG("parsed %d: 0x%x", i, buf[i]);
 			}
 		}
@@ -1035,10 +1036,10 @@ int SeptentrioGPS::receive(unsigned timeout)
 
 int SeptentrioGPS::read(uint8_t *buf, size_t buf_length, int timeout)
 {
-	int num_read = pollOrRead((uint8_t *)data1, data2, timeout);
+	int num_read = poll_or_read(buf, buf_length, timeout);
 
 	if (num_read > 0) {
-		gps->dumpGpsData((uint8_t *)data1, (size_t)num_read, SeptentrioDumpCommMode::Full, false);
+		dump_gps_data(buf, (size_t)num_read, SeptentrioDumpCommMode::Full, false);
 	}
 
 	return num_read;
@@ -1046,7 +1047,7 @@ int SeptentrioGPS::read(uint8_t *buf, size_t buf_length, int timeout)
 
 int SeptentrioGPS::poll_or_read(uint8_t *buf, size_t buf_length, int timeout)
 {
-	handleInjectDataTopic();
+	handle_inject_data_topic();
 
 #if !defined(__PX4_QURT)
 
@@ -1077,8 +1078,7 @@ int SeptentrioGPS::poll_or_read(uint8_t *buf, size_t buf_length, int timeout)
 			 * If more bytes are available, we'll go back to poll() again.
 			 */
 			const unsigned character_count = 32; // minimum bytes that we want to read
-			unsigned baudrate = _baudrate == 0 ? 115200 : _baudrate;
-			const unsigned sleeptime = character_count * 1000000 / (baudrate / 10);
+			const unsigned sleeptime = character_count * 1000000 / (RECEIVER_BAUD_RATE / 10);
 
 #ifdef __PX4_NUTTX
 			int err = 0;
@@ -1158,7 +1158,7 @@ void SeptentrioGPS::reset_if_scheduled()
 	SeptentrioGPSResetType reset_type = _scheduled_reset.load();
 
 	if (reset_type != SeptentrioGPSResetType::None) {
-		_scheduled_reset.store(GPSRestartType::None);
+		_scheduled_reset.store(SeptentrioGPSResetType::None);
 		int res = reset(reset_type);
 
 		if (res == -1) {
@@ -1174,37 +1174,7 @@ void SeptentrioGPS::reset_if_scheduled()
 int SeptentrioGPS::set_baudrate(unsigned baud)
 {
 	/* process baud rate */
-	int speed;
-
-	switch (baud) {
-	case 9600:   speed = B9600;   break;
-
-	case 19200:  speed = B19200;  break;
-
-	case 38400:  speed = B38400;  break;
-
-	case 57600:  speed = B57600;  break;
-
-	case 115200: speed = B115200; break;
-
-	case 230400: speed = B230400; break;
-
-#ifndef B460800
-#define B460800 460800
-#endif
-
-	case 460800: speed = B460800; break;
-
-#ifndef B921600
-#define B921600 921600
-#endif
-
-	case 921600: speed = B921600; break;
-
-	default:
-		PX4_ERR("ERR: unknown baudrate: %d", baud);
-		return -EINVAL;
-	}
+	int speed = RECEIVER_BAUD_RATE;
 
 	struct termios uart_config;
 
@@ -1250,17 +1220,17 @@ int SeptentrioGPS::set_baudrate(unsigned baud)
 
 	/* set baud rate */
 	if ((termios_state = cfsetispeed(&uart_config, speed)) < 0) {
-		GPS_ERR("ERR: %d (cfsetispeed)", termios_state);
+		PX4_ERR("ERR: %d (cfsetispeed)", termios_state);
 		return -1;
 	}
 
 	if ((termios_state = cfsetospeed(&uart_config, speed)) < 0) {
-		GPS_ERR("ERR: %d (cfsetospeed)", termios_state);
+		PX4_ERR("ERR: %d (cfsetospeed)", termios_state);
 		return -1;
 	}
 
 	if ((termios_state = tcsetattr(_serial_fd, TCSANOW, &uart_config)) < 0) {
-		GPS_ERR("ERR: %d (tcsetattr)", termios_state);
+		PX4_ERR("ERR: %d (tcsetattr)", termios_state);
 		return -1;
 	}
 
@@ -1275,14 +1245,16 @@ void SeptentrioGPS::handle_inject_data_topic()
 	gps_inject_data_s msg;
 
 	// If there has not been a valid RTCM message for a while, try to switch to a different RTCM link
-	if ((hrt_absolute_time() - _last_rtcm_injection_time) > 5_s) {
+	// TODO: Change 5000000 back to 5_s (got header include errors)
+	if ((hrt_absolute_time() - _last_rtcm_injection_time) > 5000000) {
 
 		for (int instance = 0; instance < _orb_inject_data_sub.size(); instance++) {
 			const bool exists = _orb_inject_data_sub[instance].advertised();
 
 			if (exists) {
 				if (_orb_inject_data_sub[instance].copy(&msg)) {
-					if ((hrt_absolute_time() - msg.timestamp) < 5_s) {
+					// TODO: Change 5000000 back to 5_s (got header include errors)
+					if ((hrt_absolute_time() - msg.timestamp) < 5000000) {
 						// Remember that we already did a copy on this instance.
 						already_copied = true;
 						_selected_rtcm_instance = instance;
@@ -1313,7 +1285,7 @@ void SeptentrioGPS::handle_inject_data_topic()
 				* But as we don't write anywhere else to the device during operation, we don't
 				* need to assemble the message first.
 				*/
-				injectData(msg.data, msg.len);
+				inject_data(msg.data, msg.len);
 
 				++_last_rate_rtcm_injection_count;
 				_last_rtcm_injection_time = hrt_absolute_time();
@@ -1323,6 +1295,15 @@ void SeptentrioGPS::handle_inject_data_topic()
 		updated = _orb_inject_data_sub[_selected_rtcm_instance].update(&msg);
 
 	} while (updated && num_injections < max_num_injections);
+}
+
+bool SeptentrioGPS::inject_data(uint8_t *data, size_t len)
+{
+	dump_gps_data(data, len, SeptentrioDumpCommMode::Full, true);
+
+	size_t written = ::write(_serial_fd, data, len);
+	::fsync(_serial_fd);
+	return written == len;
 }
 
 void SeptentrioGPS::publish()
@@ -1398,7 +1379,7 @@ void SeptentrioGPS::publish_rtcm_corrections(uint8_t *data, size_t len)
 	}
 }
 
-void SeptentrioGPS::dump_gps_data(uint8_t *data, size_t len, SeptentrioDumpCommMode mode, bool msg_to_gps_device)
+void SeptentrioGPS::dump_gps_data(const uint8_t *data, size_t len, SeptentrioDumpCommMode mode, bool msg_to_gps_device)
 {
 	gps_dump_s *dump_data  = msg_to_gps_device ? _dump_to_device : _dump_from_device;
 
@@ -1406,7 +1387,7 @@ void SeptentrioGPS::dump_gps_data(uint8_t *data, size_t len, SeptentrioDumpCommM
 		return;
 	}
 
-	dump_data->instance = (uint8_t)_instance;
+	dump_data->instance = 0;
 
 	while (len > 0) {
 		size_t write_len = len;
@@ -1440,19 +1421,21 @@ void SeptentrioGPS::got_rtcm_message(uint8_t *data, size_t len)
 
 void SeptentrioGPS::store_update_rates()
 {
-	_rate_vel = _rate_count_vel / (((float)(gps_absolute_time() - _interval_rate_start)) / 1000000.0f);
-	_rate_lat_lon = _rate_count_lat_lon / (((float)(gps_absolute_time() - _interval_rate_start)) / 1000000.0f);
+	_rate_vel = _rate_count_vel / (((float)(hrt_absolute_time() - _interval_rate_start)) / 1000000.0f);
+	_rate_lat_lon = _rate_count_lat_lon / (((float)(hrt_absolute_time() - _interval_rate_start)) / 1000000.0f);
 }
 
 void SeptentrioGPS::reset_update_rates()
 {
 	_rate_count_vel = 0;
 	_rate_count_lat_lon = 0;
-	_interval_rate_start = gps_absolute_time();
+	_interval_rate_start = hrt_absolute_time();
 }
 
 void SeptentrioGPS::set_clock(timespec rtc_gps_time)
 {
+	timespec rtc_system_time;
+	px4_clock_gettime(CLOCK_REALTIME, &rtc_system_time);
 	int drift_time = abs(rtc_system_time.tv_sec - rtc_gps_time.tv_sec);
 
 	if (drift_time >= SET_CLOCK_DRIFT_TIME_S) {
