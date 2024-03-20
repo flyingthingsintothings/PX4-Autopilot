@@ -268,11 +268,11 @@ int SeptentrioGPS::task_spawn(int argc, char *argv[])
 	static constexpr int TASK_STACK_SIZE = PX4_STACK_ADJUSTED(2040);
 
 	px4_task_t task_id = px4_task_spawn_cmd("septentrio",
-				      SCHED_DEFAULT,
-				      SCHED_PRIORITY_SLOW_DRIVER,
-				      TASK_STACK_SIZE,
-				      &run_trampoline,
-				      (char *const *)argv);
+						SCHED_DEFAULT,
+						SCHED_PRIORITY_SLOW_DRIVER,
+						TASK_STACK_SIZE,
+						&run_trampoline,
+						(char *const *)argv);
 
 	if (task_id < 0) {
 		// `_task_id` of module that hasn't been started before or has been stopped should already be -1.
