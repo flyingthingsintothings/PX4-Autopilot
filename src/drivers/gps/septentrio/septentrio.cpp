@@ -51,6 +51,10 @@
 #include <uORB/topics/gps_inject_data.h>
 #include <termios.h>
 
+#ifdef __PX4_LINUX
+#include <linux/spi/spidev.h>
+#endif
+
 #include "septentrio.h"
 #include "util.h"
 #include "../devices/src/rtcm.h"
@@ -171,6 +175,8 @@ int SeptentrioGPS::print_status()
 
 void SeptentrioGPS::run()
 {
+	uint64_t last_rate_measurement = hrt_absolute_time();
+	unsigned last_rate_count = 0;
 	param_t handle = param_find("SEPT_YAW_OFFS");
 	float heading_offset = 0.f;
 
@@ -181,13 +187,16 @@ void SeptentrioGPS::run()
 
 	initialize_communication_dump();
 
-	// Set up the communication, configure the receiver and start processing data in a loop.
+	// Set up the communication, configure the receiver and start processing data until we have to exit.
 	while (!should_exit()) {
 		if (serial_open() != 0) {
 			continue;
 		}
 
 		decode_init();
+
+		// TODO: See whether this is still correct when drivers are separate modules.
+		set_device_type(DRV_GPS_DEVTYPE_SBF);
 
 		if (_dump_communication_mode == SeptentrioDumpCommMode::RTCM) {
 			_output_mode = SeptentrioGPSOutputMode::GPSAndRTCM;
@@ -205,7 +214,41 @@ void SeptentrioGPS::run()
 			_report_gps_pos.heading_offset = heading_offset;
 
 			// Read data from the receiver and publish it until an error occurs.
-			process_until_error();
+			int helper_ret;
+			unsigned receive_timeout = TIMEOUT_5HZ;
+
+			while ((helper_ret = receive(receive_timeout)) > 0 && !should_exit()) {
+
+				if (helper_ret & 1) {
+					publish();
+
+					last_rate_count++;
+				}
+
+				if (_p_report_sat_info && (helper_ret & 2)) {
+					publish_satellite_info();
+				}
+
+				reset_if_scheduled();
+
+				/* measure update rate every 5 seconds */
+				if (hrt_absolute_time() - last_rate_measurement > RATE_MEASUREMENT_PERIOD) {
+					float dt = (float)((hrt_absolute_time() - last_rate_measurement)) / 1000000.0f;
+					_rate = last_rate_count / dt;
+					_rate_rtcm_injection = _last_rate_rtcm_injection_count / dt;
+					_rate_reading = _num_bytes_read / dt;
+					last_rate_measurement = hrt_absolute_time();
+					last_rate_count = 0;
+					_last_rate_rtcm_injection_count = 0;
+					_num_bytes_read = 0;
+					store_update_rates();
+					reset_update_rates();
+				}
+
+				if (!_healthy) {
+					_healthy = true;
+				}
+			}
 
 			if (_healthy) {
 				_healthy = false;
@@ -224,17 +267,21 @@ int SeptentrioGPS::task_spawn(int argc, char *argv[])
 {
 	static constexpr int TASK_STACK_SIZE = PX4_STACK_ADJUSTED(2040);
 
-	_task_id = px4_task_spawn_cmd("septentrio",
+	px4_task_t task_id = px4_task_spawn_cmd("septentrio",
 				      SCHED_DEFAULT,
 				      SCHED_PRIORITY_SLOW_DRIVER,
 				      TASK_STACK_SIZE,
 				      &run_trampoline,
 				      (char *const *)argv);
 
-	if (_task_id < 0) {
-		_task_id = 1;
+	if (task_id < 0) {
+		// `_task_id` of module that hasn't been started before or has been stopped should already be -1.
+		// This is just to make sure.
+		_task_id = -1;
 		return -errno;
 	}
+
+	_task_id = task_id;
 
 	return 0;
 }
@@ -319,7 +366,6 @@ int SeptentrioGPS::custom_command(int argc, char *argv[])
 
 int SeptentrioGPS::print_usage(const char *reason)
 {
-
 	if (reason) {
 		PX4_WARN("%s\n", reason);
 	}
@@ -331,10 +377,9 @@ GPS driver module that handles the communication with Septentrio devices and pub
 
 The module currently only supports a single GPS device.
 )DESCR_STR");
-	PRINT_MODULE_USAGE_NAME("SeptentrioGPS", "driver");
+	PRINT_MODULE_USAGE_NAME("septentrio", "driver");
 	PRINT_MODULE_USAGE_COMMAND("start");
 	PRINT_MODULE_USAGE_PARAM_STRING('d', "/dev/ttyS3", "<file:dev>", "GPS device", true);
-	PRINT_MODULE_USAGE_PARAM_INT('b', 0, 0, 3000000, "Baudrate (can also be p:<param_name>)", true);
 
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
@@ -519,47 +564,6 @@ int SeptentrioGPS::configure(float heading_offset)
 	return 0;
 }
 
-void SeptentrioGPS::process_until_error()
-{
-	uint64_t last_rate_measurement = hrt_absolute_time();
-	unsigned last_rate_count = 0;
-	int helper_ret;
-	unsigned receive_timeout = TIMEOUT_5HZ;
-
-	while ((helper_ret = receive(receive_timeout)) > 0 && !should_exit()) {
-
-		if (helper_ret & 1) {
-			publish();
-
-			last_rate_count++;
-		}
-
-		if (_p_report_sat_info && (helper_ret & 2)) {
-			publish_satellite_info();
-		}
-
-		reset_if_scheduled();
-
-		/* measure update rate every 5 seconds */
-		if (hrt_absolute_time() - last_rate_measurement > RATE_MEASUREMENT_PERIOD) {
-			float dt = (float)((hrt_absolute_time() - last_rate_measurement)) / 1000000.0f;
-			_rate = last_rate_count / dt;
-			_rate_rtcm_injection = _last_rate_rtcm_injection_count / dt;
-			_rate_reading = _num_bytes_read / dt;
-			last_rate_measurement = hrt_absolute_time();
-			last_rate_count = 0;
-			_last_rate_rtcm_injection_count = 0;
-			_num_bytes_read = 0;
-			store_update_rates();
-			reset_update_rates();
-		}
-
-		if (!_healthy) {
-			_healthy = true;
-		}
-	}
-}
-
 int SeptentrioGPS::serial_open()
 {
 	if (_serial_fd < 0) {
@@ -573,7 +577,7 @@ int SeptentrioGPS::serial_open()
 
 #ifdef __PX4_LINUX
 
-		if (_interface == GPSHelper::Interface::SPI) {
+		if (_interface == SeptentrioSerialInterface::SPI) {
 			int spi_speed = 1000000; // make sure the bus speed is not too high (required on RPi)
 			int status_value = ::ioctl(_serial_fd, SPI_IOC_WR_MAX_SPEED_HZ, &spi_speed);
 
@@ -1438,14 +1442,13 @@ void SeptentrioGPS::set_clock(timespec rtc_gps_time)
 	px4_clock_gettime(CLOCK_REALTIME, &rtc_system_time);
 	int drift_time = abs(rtc_system_time.tv_sec - rtc_gps_time.tv_sec);
 
+    	// As of 2021 setting the time on Nuttx temporarily pauses interrupts so only set the time if it is very wrong.
 	if (drift_time >= SET_CLOCK_DRIFT_TIME_S) {
-		// As of 2021 setting the time on Nuttx temporarily pauses interrupts so only set the time if it is very wrong.
 		// TODO: clock slewing of the RTC for small time differences
 		px4_clock_settime(CLOCK_REALTIME, &rtc_gps_time);
 	}
 }
 
-// You got this!
 extern "C" __EXPORT int septentrio_main(int argc, char *argv[])
 {
 	return SeptentrioGPS::main(argc, argv);

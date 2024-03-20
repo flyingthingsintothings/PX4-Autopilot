@@ -64,10 +64,12 @@ typedef enum {
 	SBF_DECODE_SYNC1 = 0,
 	SBF_DECODE_SYNC2,
 	SBF_DECODE_PAYLOAD,
-	SBF_DECODE_RTCM3
+	SBF_DECODE_RTCM3,
 } sbf_decode_state_t;
 
-/* Struct for dynamic allocation of satellite info data */
+/**
+ *  Struct for dynamic allocation of satellite info data.
+ */
 struct GPSSatelliteInfo {
 	satellite_info_s _data;
 };
@@ -75,7 +77,15 @@ struct GPSSatelliteInfo {
 enum class SeptentrioDumpCommMode : int32_t {
 	Disabled = 0,
 	Full, ///< dump full RX and TX data for all devices
-	RTCM ///< dump received RTCM from Main GPS
+	RTCM, ///< dump received RTCM from Main GPS
+};
+
+/**
+ * The type of serial connection to the receiver.
+ */
+enum class SeptentrioSerialInterface : uint8_t {
+	UART = 0,
+	SPI,
 };
 
 enum class SeptentrioGPSResetType {
@@ -169,11 +179,6 @@ private:
 	int configure(float heading_offset);
 
 	/**
-	 * Keep processing receiver messages until an error occurs.
-	 */
-	void process_until_error();
-
-	/**
 	 * Open the serial connection to the receiver.
 	 * On error, wait a second and return.
 	 * Does nothing if the connection is already open.
@@ -226,6 +231,9 @@ private:
 
 	/**
 	 * @brief Send a message and waits for acknowledge.
+	 *
+	 * @param msg The message to send to the receiver
+	 * @param timeout The time before sending the message times out
 	 *
 	 * @return true on success, false on write error (errno set) or ack wait timeout
 	 */
