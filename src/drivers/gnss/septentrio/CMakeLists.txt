@@ -39,7 +39,7 @@ px4_add_module(
 	SRCS
 		septentrio.cpp
 		util.cpp
-		../devices/src/rtcm.cpp
+		rtcm.cpp
 	MODULE_CONFIG
 		module.yaml
 	)

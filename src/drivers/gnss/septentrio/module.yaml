@@ -3,7 +3,7 @@ module_name: Septentrio
 parameters:
   - group: Septentrio GNSS Receiver
     definitions:
-      SEPT_YAW_OFFS:
+      SSN_YAW_OFFS:
         description:
           short: Heading/Yaw offset for dual antenna GPS
           long: |
@@ -23,7 +23,7 @@ parameters:
         max: 360
         unit: deg
         reboot_required: true
-      SEPT_SAT_INFO:
+      SSN_SAT_INFO:
         description:
           short: Enable sat info
           long: |
@@ -31,24 +31,7 @@ parameters:
         type: boolean
         default: 0
         reboot_required: true
-      SEPT_GNSS:
-        description:
-          short: GNSS Systems
-          long: |
-            This integer bitmask controls the set of GNSS systems used by the receiver.
-            When no bits are set, the receiver's default configuration is used.
-        bit:
-          0: GPS (with QZSS)
-          1: SBAS (multiple GPS augmentation systems)
-          2: Galileo
-          3: BeiDou
-          4: GLONASS
-        type: bitmask
-        default: 0
-        min: 0
-        max: 31
-        reboot_required: true
-      SEPT_PITCH_OFFS:
+      SSN_PITCH_OFFS:
         description:
           short: Pitch offset for dual antenna GPS
           long: |
@@ -65,7 +48,7 @@ parameters:
         max: 90
         unit: deg
         reboot_required: true
-      SEPT_DUMP_COMM:
+      SSN_DUMP_COMM:
         description:
           short: Log GPS communication data
           long: |

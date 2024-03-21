@@ -51,16 +51,11 @@
 #include <uORB/topics/gps_inject_data.h>
 #include <termios.h>
 
-#ifdef __PX4_LINUX
-#include <linux/spi/spidev.h>
-#endif
-
 #include "septentrio.h"
 #include "util.h"
-#include "../devices/src/rtcm.h"
 
 #ifndef GPS_READ_BUFFER_SIZE
-#define GPS_READ_BUFFER_SIZE	150		///< Buffer size for `read()` call
+#define GPS_READ_BUFFER_SIZE 150 ///< Buffer size for `read()` call
 #endif
 
 // TODO: this functionality is not available on the Snapdragon yet
@@ -68,19 +63,19 @@
 #define NO_MKTIME
 #endif
 
-#define SBF_CONFIG_TIMEOUT	1000		///< ms, timeout for waiting ACK
-#define SBF_PACKET_TIMEOUT	2		///< ms, if now data during this delay assume that full update received
-#define DISABLE_MSG_INTERVAL	1000000		///< us, try to disable message with this interval
-#define MSG_SIZE		100 		///< size of the message to be sent to the receiver.
-#define TIMEOUT_5HZ		500		///< Timeout time in mS, 1000 mS (1Hz) + 300 mS delta for error
-#define RATE_MEASUREMENT_PERIOD 5000000		/// TODO: Document + change back to `5_s` (didn't know what headers to include)
-#define RECEIVER_BAUD_RATE	115200		///< The baudrate of the serial connection to the receiver
+#define SBF_CONFIG_TIMEOUT      1000    ///< ms, timeout for waiting ACK
+#define SBF_PACKET_TIMEOUT      2       ///< ms, if now data during this delay assume that full update received
+#define DISABLE_MSG_INTERVAL    1000000 ///< us, try to disable message with this interval
+#define MSG_SIZE                100     ///< size of the message to be sent to the receiver.
+#define TIMEOUT_5HZ             500     ///< Timeout time in mS, 1000 mS (1Hz) + 300 mS delta for error
+#define RATE_MEASUREMENT_PERIOD 5_s     /// TODO: Document + change back to `5_s` (didn't know what headers to include)
+#define RECEIVER_BAUD_RATE      115200  ///< The baudrate of the serial connection to the receiver
 // TODO: this number seems wrong
 #define GPS_EPOCH_SECS ((time_t)1234567890ULL)
 
 /**** Trace macros, disable for production builds */
-#define SBF_TRACE_PARSER(...)   {/*PX4_INFO(__VA_ARGS__);*/}    /* decoding progress in parse_char() */
-#define SBF_TRACE_RXMSG(...)    {/*PX4_INFO(__VA_ARGS__);*/}    /* Rx msgs in payload_rx_done() */
+#define SBF_TRACE_PARSER(...)   {/*PX4_INFO(__VA_ARGS__);*/} ///< decoding progress in parse_char()
+#define SBF_TRACE_RXMSG(...)    {/*PX4_INFO(__VA_ARGS__);*/} ///< Rx msgs in payload_rx_done()
 #define SBF_INFO(...)           {PX4_INFO(__VA_ARGS__);}
 
 /**** Warning macros, disable to save memory */
@@ -88,7 +83,7 @@
 #define SBF_DEBUG(...)       {/*PX4_WARN(__VA_ARGS__);*/}
 
 // Commands
-#define SBF_FORCE_INPUT "SSSSSSSSSS\n"											/**< Force input on the connected port */
+#define SBF_FORCE_INPUT "SSSSSSSSSS\n"  /**< Force input on the connected port */
 
 #define SBF_CONFIG_RESET_HOT "" \
 	SBF_FORCE_INPUT"ExeResetReceiver, soft, none\n"
@@ -136,7 +131,7 @@ SeptentrioGPS::SeptentrioGPS(const char *device_path) :
 	_report_gps_pos.heading_offset = NAN;
 
 	int32_t enable_sat_info = 0;
-	param_get(param_find("SEPT_SAT_INFO"), &enable_sat_info);
+	param_get(param_find("SSN_SAT_INFO"), &enable_sat_info);
 
 	/* create satellite info data object if requested */
 	if (enable_sat_info) {
@@ -177,7 +172,7 @@ void SeptentrioGPS::run()
 {
 	uint64_t last_rate_measurement = hrt_absolute_time();
 	unsigned last_rate_count = 0;
-	param_t handle = param_find("SEPT_YAW_OFFS");
+	param_t handle = param_find("SSN_YAW_OFFS");
 	float heading_offset = 0.f;
 
 	if (handle != PARAM_INVALID) {
@@ -430,7 +425,7 @@ int SeptentrioGPS::configure(float heading_offset)
 {
 	_configured = false;
 
-	param_t handle = param_find("SEPT_PITCH_OFFS");
+	param_t handle = param_find("SSN_PITCH_OFFS");
 	float pitch_offset = 0.f;
 
 	if (handle != PARAM_INVALID) {
@@ -576,24 +571,6 @@ int SeptentrioGPS::serial_open()
 			return -1;
 		}
 
-#ifdef __PX4_LINUX
-
-		if (_interface == SeptentrioSerialInterface::SPI) {
-			int spi_speed = 1000000; // make sure the bus speed is not too high (required on RPi)
-			int status_value = ::ioctl(_serial_fd, SPI_IOC_WR_MAX_SPEED_HZ, &spi_speed);
-
-			if (status_value < 0) {
-				PX4_ERR("SPI_IOC_WR_MAX_SPEED_HZ failed for %s (%d)", _port, errno);
-			}
-
-			status_value = ::ioctl(_serial_fd, SPI_IOC_RD_MAX_SPEED_HZ, &spi_speed);
-
-			if (status_value < 0) {
-				PX4_ERR("SPI_IOC_RD_MAX_SPEED_HZ failed for %s (%d)", _port, errno);
-			}
-		}
-
-#endif /* __PX4_LINUX */
 	}
 
 	return 0;
@@ -1128,7 +1105,7 @@ int SeptentrioGPS::write(const uint8_t* buf, size_t buf_length)
 
 void SeptentrioGPS::initialize_communication_dump()
 {
-	param_t handle = param_find("SEPT_DUMP_COMM");
+	param_t handle = param_find("SSN_DUMP_COMM");
 	int32_t param_dump_comm;
 
 	if (handle == PARAM_INVALID || param_get(handle, &param_dump_comm) != 0) {

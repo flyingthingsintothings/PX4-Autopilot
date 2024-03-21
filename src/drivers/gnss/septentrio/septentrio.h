@@ -57,7 +57,7 @@
 #include <lib/parameters/param.h>
 
 #include "sbf.h"
-#include "../devices/src/rtcm.h"
+#include "rtcm.h"
 
 /* Message decoder state */
 typedef enum {
