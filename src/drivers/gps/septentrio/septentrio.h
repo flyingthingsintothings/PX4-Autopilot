@@ -148,7 +148,7 @@ public:
 	/**
 	 * @brief Reset the connected GPS receiver.
 	 *
-	 * @return 0 on success, <0 on error
+	 * @return 0 on success, -1 on not implemented, >0 on error
 	*/
 	int reset(SeptentrioGPSResetType type);
 

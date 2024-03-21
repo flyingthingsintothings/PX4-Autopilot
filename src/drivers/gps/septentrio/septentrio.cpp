@@ -331,14 +331,15 @@ SeptentrioGPS *SeptentrioGPS::instantiate(int argc, char *argv[])
 // Returns 0 on success, -1 otherwise.
 int SeptentrioGPS::custom_command(int argc, char *argv[])
 {
+	bool res = false;
+	SeptentrioGPS *driver_instance;
+
 	if (!is_running()) {
 		PX4_INFO("not running");
 		return PX4_ERROR;
 	}
 
-	bool res = false;
-
-	SeptentrioGPS *driver_instance = get_instance();
+	driver_instance = get_instance();
 
 	if (argc == 2 && !strcmp(argv[0], "reset")) {
 
@@ -407,7 +408,7 @@ int SeptentrioGPS::reset(SeptentrioGPSResetType type)
 		break;
 	}
 
-	return (res) ? 0 : -1;
+	return !res;
 }
 
 float SeptentrioGPS::get_position_update_rate()
@@ -1057,11 +1058,11 @@ int SeptentrioGPS::poll_or_read(uint8_t *buf, size_t buf_length, int timeout)
 
 	/* For non QURT, use the usual polling. */
 
-	//Poll only for the serial data. In the same thread we also need to handle orb messages,
-	//so ideally we would poll on both, the serial fd and orb subscription. Unfortunately the
-	//two pollings use different underlying mechanisms (at least under posix), which makes this
-	//impossible. Instead we limit the maximum polling interval and regularly check for new orb
-	//messages.
+	// Poll only for the serial data. In the same thread we also need to handle orb messages,
+	// so ideally we would poll on both, the serial fd and orb subscription. Unfortunately the
+	// two pollings use different underlying mechanisms (at least under posix), which makes this
+	// impossible. Instead we limit the maximum polling interval and regularly check for new orb
+	// messages.
 	//FIXME: add a unified poll() API
 	const int max_timeout = 50;
 
@@ -1095,7 +1096,7 @@ int SeptentrioGPS::poll_or_read(uint8_t *buf, size_t buf_length, int timeout)
 
 #else
 			px4_usleep(sleeptime);
-#endif
+#endif // __PX4_NUTTX
 
 			ret = ::read(_serial_fd, buf, buf_length);
 
@@ -1115,7 +1116,7 @@ int SeptentrioGPS::poll_or_read(uint8_t *buf, size_t buf_length, int timeout)
 	 * just a bit. */
 	px4_usleep(10000);
 	return ::read(_serial_fd, buf, buf_length);
-#endif
+#endif // !defined(__PX4_QURT)
 }
 
 int SeptentrioGPS::write(const uint8_t* buf, size_t buf_length)
