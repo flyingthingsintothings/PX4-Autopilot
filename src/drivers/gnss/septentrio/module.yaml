@@ -1,5 +1,13 @@
 module_name: Septentrio
 
+serial_config:
+    - command: septentrio start -d ${SERIAL_DEV}
+      port_config_param:
+        name: SSN_PORT_CONFIG
+        group: Septentrio GNSS Receiver
+        default: GPS1
+      label: GPS Port
+
 parameters:
   - group: Septentrio GNSS Receiver
     definitions:

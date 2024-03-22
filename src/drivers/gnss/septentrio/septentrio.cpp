@@ -384,6 +384,8 @@ The module currently only supports a single GPS device.
 	PRINT_MODULE_USAGE_PARAM_STRING('d', "/dev/ttyS3", "<file:dev>", "GPS device", true);
 
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
+	PRINT_MODULE_USAGE_COMMAND_DESCR("reset", "Reset connected receiver");
+	PRINT_MODULE_USAGE_ARG("cold|warm|hot", "Specify reset type", false);
 
 	return 0;
 }
@@ -594,7 +596,7 @@ int SeptentrioGPS::serial_close()
 	return result;
 }
 
-int SeptentrioGPS::parse_char(const uint8_t b)
+int SeptentrioGPS::parse_char(const uint8_t byte)
 {
 	int ret = 0;
 
@@ -602,24 +604,24 @@ int SeptentrioGPS::parse_char(const uint8_t b)
 
 	// Expecting Sync1
 	case SBF_DECODE_SYNC1:
-		if (b == SBF_SYNC1) { // Sync1 found --> expecting Sync2
+		if (byte == SBF_SYNC1) { // Sync1 found --> expecting Sync2
 			SBF_TRACE_PARSER("A");
-			payload_rx_add(b); // add a payload byte
+			payload_rx_add(byte); // add a payload byte
 			_decode_state = SBF_DECODE_SYNC2;
 
-		} else if (b == RTCM3_PREAMBLE && _rtcm_parsing) {
+		} else if (byte == RTCM3_PREAMBLE && _rtcm_parsing) {
 			SBF_TRACE_PARSER("RTCM");
 			_decode_state = SBF_DECODE_RTCM3;
-			_rtcm_parsing->addByte(b);
+			_rtcm_parsing->addByte(byte);
 		}
 
 		break;
 
 	// Expecting Sync2
 	case SBF_DECODE_SYNC2:
-		if (b == SBF_SYNC2) { // Sync2 found --> expecting CRC
+		if (byte == SBF_SYNC2) { // Sync2 found --> expecting CRC
 			SBF_TRACE_PARSER("B");
-			payload_rx_add(b); // add a payload byte
+			payload_rx_add(byte); // add a payload byte
 			_decode_state = SBF_DECODE_PAYLOAD;
 
 		} else { // Sync1 not followed by Sync2: reset parser
@@ -631,7 +633,7 @@ int SeptentrioGPS::parse_char(const uint8_t b)
 	// Expecting payload
 	case SBF_DECODE_PAYLOAD: SBF_TRACE_PARSER(".");
 
-		ret = payload_rx_add(b); // add a payload byte
+		ret = payload_rx_add(byte); // add a payload byte
 
 		if (ret < 0) {
 			// payload not handled, discard message
@@ -651,7 +653,7 @@ int SeptentrioGPS::parse_char(const uint8_t b)
 		break;
 
 	case SBF_DECODE_RTCM3:
-		if (_rtcm_parsing->addByte(b)) {
+		if (_rtcm_parsing->addByte(byte)) {
 			SBF_DEBUG("got RTCM message with length %i", (int) _rtcm_parsing->messageLength());
 			got_rtcm_message(_rtcm_parsing->message(), _rtcm_parsing->messageLength());
 			decode_init();
@@ -666,12 +668,12 @@ int SeptentrioGPS::parse_char(const uint8_t b)
 	return ret;
 }
 
-int SeptentrioGPS::payload_rx_add(const uint8_t b)
+int SeptentrioGPS::payload_rx_add(const uint8_t byte)
 {
 	int ret = 0;
 	uint8_t *p_buf = reinterpret_cast<uint8_t *>(&_buf);
 
-	p_buf[_rx_payload_index++] = b;
+	p_buf[_rx_payload_index++] = byte;
 
 	if ((_rx_payload_index > 7 && _rx_payload_index >= _buf.length) || _rx_payload_index >= sizeof(_buf)) {
 		ret = 1; // payload received completely
@@ -690,7 +692,7 @@ int SeptentrioGPS::payload_rx_done()
 		return 0;
 	}
 
-	// handle message
+	// Handle message
 	switch (_buf.msg_id) {
 	case SBF_ID_PVTGeodetic: SBF_TRACE_RXMSG("Rx PVTGeodetic");
 		_msg_status |= 1;
@@ -807,6 +809,7 @@ int SeptentrioGPS::payload_rx_done()
 		_last_timestamp_time = _report_gps_pos.timestamp;
 		_rate_count_vel++;
 		_rate_count_lat_lon++;
+		// NOTE: Isn't this just `ret |= (_msg_status == 7)`?
 		ret |= (_msg_status == 7) ? 1 : 0;
 		break;
 
@@ -894,6 +897,7 @@ int SeptentrioGPS::payload_rx_done()
 	}
 
 	if (ret > 0) {
+		// NOTE: Isn't this always 0?
 		_report_gps_pos.timestamp_time_relative = static_cast<int32_t>(_last_timestamp_time - _report_gps_pos.timestamp);
 	}
 
@@ -994,14 +998,14 @@ int SeptentrioGPS::receive(unsigned timeout)
 		ret = read(buf, sizeof(buf), handled ? SBF_PACKET_TIMEOUT : timeout);
 
 		if (ret < 0) {
-			// something went wrong when polling or reading
+			// Something went wrong when polling or reading.
 			SBF_WARN("ubx poll_or_read err");
 			return -1;
 
 		} else {
 			SBF_DEBUG("Read %d bytes (receive)", ret);
 
-			// pass received bytes to the packet decoder
+			// Pass received bytes to the packet decoder.
 			for (int i = 0; i < ret; i++) {
 				handled |= parse_char(buf[i]);
 				SBF_DEBUG("parsed %d: 0x%x", i, buf[i]);
@@ -1226,8 +1230,7 @@ int SeptentrioGPS::set_baudrate(unsigned baud)
 
 void SeptentrioGPS::handle_inject_data_topic()
 {
-	// We don't want to call copy again further down if we have already done a
-	// copy in the selection process.
+	// We don't want to call copy again further down if we have already done a copy in the selection process.
 	bool already_copied = false;
 	gps_inject_data_s msg;
 

@@ -50,7 +50,6 @@
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/SubscriptionMultiArray.hpp>
 #include <uORB/topics/satellite_info.h>
-#include <uORB/topics/sensor_gnss_relative.h>
 #include <uORB/topics/sensor_gps.h>
 #include <uORB/topics/gps_dump.h>
 #include <uORB/topics/gps_inject_data.h>
@@ -202,23 +201,23 @@ private:
 	int serial_close();
 
 	/**
-	 * @brief Parse the binary SBF packet.
+	 * @brief Parse the next byte of a received message from the receiver.
 	 *
 	 * @return 0 = decoding, 1 = message handled, 2 = sat info message handled
 	 */
-	int parse_char(const uint8_t b);
+	int parse_char(const uint8_t byte);
 
 	/**
 	 * @brief Add payload rx byte.
 	 *
-	 * @return -1 = error, 0 = ok, 1 = payload completed
+	 * @return -1 = error, 0 = ok, 1 = payload received completely
 	 */
-	int payload_rx_add(const uint8_t b);
+	int payload_rx_add(const uint8_t byte);
 
 	/**
 	 * @brief Parses incoming SBF blocks.
 	 *
-	 * @return 0 = no message handled, 1 = message handled, 2 = sat info message handled
+	 * @return bitfield: all 0 = no message handled, 1 = position handled, 2 = satellite info handled
 	 */
 	int payload_rx_done();
 
@@ -305,7 +304,7 @@ private:
 	int set_baudrate(unsigned baud);
 
 	/**
-	 * @brief Check for incoming messages on the inject data topic and handle them.
+	 * @brief Handle incoming messages on the "inject data" uORB topic and send them to the receiver.
 	 */
 	void handle_inject_data_topic();
 
@@ -370,41 +369,45 @@ private:
 	void set_clock(timespec rtc_gps_time);
 
 	px4::atomic<SeptentrioGPSResetType>            _scheduled_reset{SeptentrioGPSResetType::None};                                   ///< The type of receiver reset that is scheduled
-	SeptentrioGPSOutputMode                        _output_mode{SeptentrioGPSOutputMode::GPS};                                       /// TODO: Document
+	SeptentrioGPSOutputMode                        _output_mode{SeptentrioGPSOutputMode::GPS};                                       ///< The type of data the receiver should output
 	SeptentrioDumpCommMode                         _dump_communication_mode{SeptentrioDumpCommMode::Disabled};                       ///< GPS communication dump mode
 	sbf_decode_state_t                             _decode_state{SBF_DECODE_SYNC1};                                                  ///< State of the SBF parser
 	int                                            _serial_fd{-1};                                                                   ///< The file descriptor used for communication with the receiver
 	char                                           _port[20] {};                                                                     ///< The path of the used serial device
 	bool                                           _configured{false};                                                               ///< Configuration status of the connected receiver
-	uint64_t                                       _last_timestamp_time{0};                                                          /// TODO: Document
-	hrt_abstime                                    _last_rtcm_injection_time{0};                                                     ///< time of last rtcm injection
-	uint8_t                                        _msg_status{0};                                                                   /// TODO: Document
-	uint16_t                                       _rx_payload_index{0};                                                             /// TODO: Document
-	sbf_buf_t                                      _buf;                                                                             /// TODO: Document
-	RTCMParsing                                    *_rtcm_parsing{nullptr};                                                          /// TODO: Document
-	satellite_info_s                               *_p_report_sat_info{nullptr};                                                     ///< Pointer to uORB topic for satellite info
-	unsigned                                       _rate_reading{0};                                                                 ///< Reading rate in B/s
-	sensor_gps_s                                   _report_gps_pos{};                                                                ///< uORB topic for gps position
-	GPSSatelliteInfo                               *_sat_info{nullptr};                                                              ///< Instance of GPS sat info data object
-	gps_dump_s                                     *_dump_to_device{nullptr};                                                        ///< uORB GPS dump data (to the receiver)
-	gps_dump_s                                     *_dump_from_device{nullptr};                                                      ///< uORB GPS dump data (from the receiver)
-	uORB::Publication<gps_dump_s>                  _dump_communication_pub{ORB_ID(gps_dump)};                                        ///< uORB topic used to dump GPS data
-	uORB::Publication<gps_inject_data_s>           _gps_inject_data_pub{ORB_ID(gps_inject_data)};                                    /// TODO: Document
-	uORB::PublicationMulti<sensor_gps_s>           _report_gps_pos_pub{ORB_ID(sensor_gps)};                                          ///< uORB pub for gps position
-	uORB::PublicationMulti<satellite_info_s>       _report_sat_info_pub{ORB_ID(satellite_info)};                                     ///< uORB pub for satellite info
-	uORB::PublicationMulti<sensor_gnss_relative_s> _sensor_gnss_relative_pub{ORB_ID(sensor_gnss_relative)};                          /// TODO: Document
-	uORB::SubscriptionMultiArray<gps_inject_data_s, gps_inject_data_s::MAX_INSTANCES> _orb_inject_data_sub{ORB_ID::gps_inject_data}; /// TODO: Document
+	uint64_t                                       _last_timestamp_time{0};                                                          ///< The last time a timestamp was added to a position uORB message (us)
+	hrt_abstime                                    _last_rtcm_injection_time{0};                                                     ///< Time of last RTCM injection
+	uint8_t                                        _msg_status{0};
+	uint16_t                                       _rx_payload_index{0};                                                             ///< State for the message parser
+	sbf_buf_t                                      _buf;                                                                             ///< The complete received message
+	RTCMParsing                                    *_rtcm_parsing{nullptr};                                                          ///< RTCM message parser
 	uint8_t                                        _selected_rtcm_instance{0};                                                       ///< uORB instance that is being used for RTCM corrections
 	bool                                           _healthy{false};                                                                  ///< Flag to signal if the GPS is OK
-	float                                          _rate{0.0f};                                                                      ///< Position update rate
-	float                                          _rate_lat_lon{0.0f};                                                              /// TODO: Document
-	float                                          _rate_vel{0.0f};                                                                  /// TODO: Document
-	float                                          _rate_rtcm_injection{0.0f};                                                       ///< RTCM message injection rate
-	unsigned                                       _last_rate_rtcm_injection_count{0};                                               ///< Counter for number of RTCM messages
-	uint8_t                                        _rate_count_vel;                                                                  /// TODO: Document
-	uint8_t                                        _rate_count_lat_lon{};                                                            /// TODO: Document
-	unsigned                                       _num_bytes_read{0};                                                               ///< Counter for number of read bytes from the UART (within update interval)
 	uint8_t                                        _spoofing_state{0};                                                               ///< Receiver spoofing state
 	uint8_t                                        _jamming_state{0};                                                                ///< Receiver jamming state
-	uint64_t                                       _interval_rate_start{0};                                                          /// TODO: Document
+
+	// uORB topics and subscriptions
+	gps_dump_s                                     *_dump_to_device{nullptr};                                                        ///< uORB GPS dump data (to the receiver)
+	gps_dump_s                                     *_dump_from_device{nullptr};                                                      ///< uORB GPS dump data (from the receiver)
+	sensor_gps_s                                   _report_gps_pos{};                                                                ///< uORB topic for gps position
+	satellite_info_s                               *_p_report_sat_info{nullptr};                                                     ///< Pointer to uORB topic for satellite info
+	GPSSatelliteInfo                               *_sat_info{nullptr};                                                              ///< Instance of GPS sat info data object
+	uORB::Publication<gps_dump_s>                  _dump_communication_pub{ORB_ID(gps_dump)};                                        ///< uORB topic for dump GPS data
+	uORB::Publication<gps_inject_data_s>           _gps_inject_data_pub{ORB_ID(gps_inject_data)};                                    ///< uORB topic for injected data to the receiver
+	uORB::PublicationMulti<sensor_gps_s>           _report_gps_pos_pub{ORB_ID(sensor_gps)};                                          ///< uORB topic for gps position
+	uORB::PublicationMulti<satellite_info_s>       _report_sat_info_pub{ORB_ID(satellite_info)};                                     ///< uORB topic for satellite info
+	uORB::SubscriptionMultiArray<gps_inject_data_s, gps_inject_data_s::MAX_INSTANCES> _orb_inject_data_sub{ORB_ID::gps_inject_data}; ///< uORB topic about data to inject to the receiver
+
+	// Reading and update rates
+	// NOTE: Both `_rate_vel` and `_rate_lat_lon` seem to be used in exactly the same way.
+	uint64_t _interval_rate_start{0};            ///< Start moment of measurement interval for position and velocity messages from the receiver
+	float    _rate{0.0f};                        ///< uORB position data publish rate (Hz)
+	uint8_t  _rate_count_vel;                    ///< Velocity messages from receiver in current measurement interval
+	uint8_t  _rate_count_lat_lon{};              ///< Position messages from receiver in current measurement interval
+	unsigned _last_rate_rtcm_injection_count{0}; ///< Counter for number of RTCM messages
+	float    _rate_vel{0.0f};                    ///< Velocity message rate from receiver in the last measurement interval (Hz)
+	float    _rate_lat_lon{0.0f};                ///< Position message rate from receiver in the last measurement interval (Hz)
+	float    _rate_rtcm_injection{0.0f};         ///< RTCM message injection rate (Hz)
+	unsigned _rate_reading{0};                   ///< Byte reading rate (Hz)
+	unsigned _num_bytes_read{0};                 ///< Number of bytes read in last measurement interval
 };
