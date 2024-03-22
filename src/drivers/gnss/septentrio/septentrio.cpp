@@ -47,6 +47,7 @@
 #include <matrix/math.hpp>
 #include <mathlib/mathlib.h>
 #include <px4_platform_common/time.h>
+#include <px4_platform_common/defines.h>
 #include <drivers/drv_hrt.h>
 #include <uORB/topics/gps_inject_data.h>
 #include <termios.h>
@@ -1103,18 +1104,18 @@ int SeptentrioGPS::write(const uint8_t* buf, size_t buf_length)
 	return ::write(_serial_fd, buf, buf_length);
 }
 
-void SeptentrioGPS::initialize_communication_dump()
+int SeptentrioGPS::initialize_communication_dump()
 {
 	param_t handle = param_find("SSN_DUMP_COMM");
 	int32_t param_dump_comm;
 
 	if (handle == PARAM_INVALID || param_get(handle, &param_dump_comm) != 0) {
-		return;
+		return PX4_ERROR;
 	}
 
 	// Check whether dumping is disabled.
 	if (param_dump_comm < 1 || param_dump_comm > 2) {
-		return;
+		return PX4_ERROR;
 	}
 
 	_dump_from_device = new gps_dump_s();
@@ -1122,7 +1123,9 @@ void SeptentrioGPS::initialize_communication_dump()
 
 	if (!_dump_from_device || !_dump_to_device) {
 		PX4_ERR("failed to allocated dump data");
-		return;
+		_dump_to_device = nullptr;
+		_dump_from_device = nullptr;
+		return PX4_ERROR;
 	}
 
 	memset(_dump_to_device, 0, sizeof(gps_dump_s));
@@ -1133,6 +1136,8 @@ void SeptentrioGPS::initialize_communication_dump()
 	_dump_communication_pub.advertise();
 
 	_dump_communication_mode = (SeptentrioDumpCommMode)param_dump_comm;
+
+	return PX4_OK;
 }
 
 void SeptentrioGPS::reset_if_scheduled()

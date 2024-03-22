@@ -278,8 +278,12 @@ private:
 	*/
 	int write(const uint8_t *buf, size_t buf_length);
 
-	// TODO: Document
-	void initialize_communication_dump();
+	/**
+	 * @brief Initialize GPS logging uORB topics and advertise them.
+	 *
+	 * @return PX4_OK on success, PX4_ERROR otherwise
+	 */
+	int initialize_communication_dump();
 
 	/**
 	 * @brief Reset the receiver if it was requested by the user.
