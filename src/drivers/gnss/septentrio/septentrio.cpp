@@ -41,47 +41,49 @@
  * @author Thomas Frans
 */
 
-#include <string.h>
-#include <ctime>
-#include <cmath>
-#include <matrix/math.hpp>
-#include <mathlib/mathlib.h>
-#include <px4_platform_common/time.h>
-#include <px4_platform_common/defines.h>
-#include <drivers/drv_hrt.h>
-#include <uORB/topics/gps_inject_data.h>
-#include <termios.h>
-
 #include "septentrio.h"
+
+#include <cmath>
+#include <ctime>
+#include <string.h>
+#include <termios.h>
+#include <drivers/drv_hrt.h>
+#include <mathlib/mathlib.h>
+#include <matrix/math.hpp>
+#include <px4_platform_common/defines.h>
+#include <px4_platform_common/time.h>
+#include <uORB/topics/gps_inject_data.h>
+
 #include "util.h"
+
+using namespace time_literals;
 
 #ifndef GPS_READ_BUFFER_SIZE
 #define GPS_READ_BUFFER_SIZE 150 ///< Buffer size for `read()` call
 #endif
 
-// TODO: this functionality is not available on the Snapdragon yet
+// TODO: This functionality is not available on the Snapdragon yet.
 #ifdef __PX4_QURT
 #define NO_MKTIME
 #endif
 
-#define SBF_CONFIG_TIMEOUT      1000    ///< ms, timeout for waiting ACK
-#define SBF_PACKET_TIMEOUT      2       ///< ms, if now data during this delay assume that full update received
-#define DISABLE_MSG_INTERVAL    1000000 ///< us, try to disable message with this interval
-#define MSG_SIZE                100     ///< size of the message to be sent to the receiver.
+#define SBF_CONFIG_TIMEOUT      1000    ///< Timeout for waiting on ACK in ms
+#define SBF_PACKET_TIMEOUT      2       ///< If no data during this delay (in ms) assume that full update received
+#define DISABLE_MSG_INTERVAL    1000000 ///< Try to disable message with this interval (in us)
+#define MSG_SIZE                100     ///< Size of the message to be sent to the receiver
 #define TIMEOUT_5HZ             500     ///< Timeout time in mS, 1000 mS (1Hz) + 300 mS delta for error
-#define RATE_MEASUREMENT_PERIOD 5_s     /// TODO: Document + change back to `5_s` (didn't know what headers to include)
+#define RATE_MEASUREMENT_PERIOD 5_s     ///< Rate at which bandwith measurements are taken
 #define RECEIVER_BAUD_RATE      115200  ///< The baudrate of the serial connection to the receiver
-// TODO: this number seems wrong
+// TODO: This number seems wrong. It's also not clear why an ULL is created and casted to UL (time_t).
 #define GPS_EPOCH_SECS ((time_t)1234567890ULL)
 
-/**** Trace macros, disable for production builds */
+// Trace macros (disable for production builds)
 #define SBF_TRACE_PARSER(...)   {/*PX4_INFO(__VA_ARGS__);*/} ///< decoding progress in parse_char()
 #define SBF_TRACE_RXMSG(...)    {/*PX4_INFO(__VA_ARGS__);*/} ///< Rx msgs in payload_rx_done()
-#define SBF_INFO(...)           {PX4_INFO(__VA_ARGS__);}
 
-/**** Warning macros, disable to save memory */
-#define SBF_WARN(...)        {PX4_WARN(__VA_ARGS__);}
-#define SBF_DEBUG(...)       {/*PX4_WARN(__VA_ARGS__);*/}
+// Warning macros (disable to save memory)
+#define SBF_WARN(...)           {PX4_WARN(__VA_ARGS__);}
+#define SBF_DEBUG(...)          {/*PX4_WARN(__VA_ARGS__);*/}
 
 // Commands
 #define SBF_FORCE_INPUT "SSSSSSSSSS\n"  /**< Force input on the connected port */
@@ -95,7 +97,7 @@
 #define SBF_CONFIG_RESET_COLD "" \
 	SBF_FORCE_INPUT"ExeResetReceiver, hard, SatData\n"
 
-#define SBF_CONFIG "setSBFOutput, Stream1, %s, PVTGeodetic+VelCovGeodetic+DOP+AttEuler+AttCovEuler, msec100\n"		/**< Configure the correct blocks for GPS positioning and heading */
+#define SBF_CONFIG "setSBFOutput, Stream1, %s, PVTGeodetic+VelCovGeodetic+DOP+AttEuler+AttCovEuler, msec100\n" /**< Configure the correct blocks for GPS positioning and heading */
 
 #define SBF_CONFIG_BAUDRATE "setCOMSettings, %s, baud%d\n"
 
@@ -121,11 +123,13 @@
 #define SBF_CONFIG_RTCM_STATIC_OFFSET "" \
 	"setAntennaOffset, Main, %f, %f, %f\n"
 
+static constexpr int SSN_SET_CLOCK_DRIFT_TIME_S{5}; ///< RTC drift time when time synchronization is needed (in seconds)
+
 SeptentrioGPS::SeptentrioGPS(const char *device_path) :
 	Device(MODULE_NAME)
 {
 	strncpy(_port, device_path, sizeof(_port) - 1);
-	/* enforce null termination */
+	// Enforce null termination.
 	_port[sizeof(_port) - 1] = '\0';
 
 	_report_gps_pos.heading = NAN;
@@ -134,7 +138,7 @@ SeptentrioGPS::SeptentrioGPS(const char *device_path) :
 	int32_t enable_sat_info = 0;
 	param_get(param_find("SSN_SAT_INFO"), &enable_sat_info);
 
-	/* create satellite info data object if requested */
+	// Create satellite info data object if requested
 	if (enable_sat_info) {
 		_sat_info = new GPSSatelliteInfo();
 		_p_report_sat_info = &_sat_info->_data;
@@ -181,7 +185,9 @@ void SeptentrioGPS::run()
 		heading_offset = matrix::wrap_pi(math::radians(heading_offset));
 	}
 
-	initialize_communication_dump();
+	if (initialize_communication_dump() == PX4_ERROR) {
+		SBF_WARN("GPS communication logging could not be initialized");
+	}
 
 	// Set up the communication, configure the receiver and start processing data until we have to exit.
 	while (!should_exit()) {
@@ -191,7 +197,7 @@ void SeptentrioGPS::run()
 
 		decode_init();
 
-		// TODO: See whether this is still correct when drivers are separate modules.
+		// TODO: Not sure whether this is still correct when drivers are separate modules.
 		set_device_type(DRV_GPS_DEVTYPE_SBF);
 
 		if (_dump_communication_mode == SeptentrioDumpCommMode::RTCM) {
@@ -204,7 +210,7 @@ void SeptentrioGPS::run()
 		// If configuration is successful, start processing messages.
 		if (configure(heading_offset) == 0) {
 
-			/* reset report */
+			// Reset report
 			memset(&_report_gps_pos, 0, sizeof(_report_gps_pos));
 			_report_gps_pos.heading = NAN;
 			_report_gps_pos.heading_offset = heading_offset;
@@ -227,7 +233,7 @@ void SeptentrioGPS::run()
 
 				reset_if_scheduled();
 
-				/* measure update rate every 5 seconds */
+				// Measure update rate every 5 seconds
 				if (hrt_absolute_time() - last_rate_measurement > RATE_MEASUREMENT_PERIOD) {
 					float dt = (float)((hrt_absolute_time() - last_rate_measurement)) / 1000000.0f;
 					_rate = last_rate_count / dt;
@@ -322,17 +328,16 @@ SeptentrioGPS *SeptentrioGPS::instantiate(int argc, char *argv[])
 	return gps;
 }
 
-// TODO: Make sure all the required commands are available!
 // Called from outside driver thread.
-// Returns 0 on success, -1 otherwise.
+// Return 0 on success, -1 otherwise.
 int SeptentrioGPS::custom_command(int argc, char *argv[])
 {
-	bool res = false;
+	bool handled = false;
 	SeptentrioGPS *driver_instance;
 
 	if (!is_running()) {
 		PX4_INFO("not running");
-		return PX4_ERROR;
+		return -1;
 	}
 
 	driver_instance = get_instance();
@@ -340,25 +345,25 @@ int SeptentrioGPS::custom_command(int argc, char *argv[])
 	if (argc == 2 && !strcmp(argv[0], "reset")) {
 
 		if (!strcmp(argv[1], "hot")) {
-			res = true;
+			handled = true;
 			driver_instance->schedule_reset(SeptentrioGPSResetType::Hot);
 
 		} else if (!strcmp(argv[1], "cold")) {
-			res = true;
+			handled = true;
 			driver_instance->schedule_reset(SeptentrioGPSResetType::Cold);
 
 		} else if (!strcmp(argv[1], "warm")) {
-			res = true;
+			handled = true;
 			driver_instance->schedule_reset(SeptentrioGPSResetType::Warm);
 		}
 	}
 
-	if (res) {
+	if (handled) {
 		PX4_INFO("Resetting GPS - %s", argv[1]);
 		return 0;
 	}
 
-	return (res) ? 0 : print_usage("unknown command");
+	return (handled) ? 0 : print_usage("unknown command");
 }
 
 int SeptentrioGPS::print_usage(const char *reason)
@@ -458,7 +463,7 @@ int SeptentrioGPS::configure(float heading_offset)
 		if (ret < 0) {
 			// something went wrong when polling or reading
 			SBF_WARN("sbf poll_or_read err");
-			return ret;
+			return PX4_ERROR;
 
 		}
 
@@ -483,12 +488,12 @@ int SeptentrioGPS::configure(float heading_offset)
 	} while (time_started + 1000 * SBF_CONFIG_TIMEOUT > hrt_absolute_time() && !response_detected);
 
 	if (response_detected) {
-		SBF_INFO("Septentrio GNSS receiver COM port: %s", com_port);
+		PX4_INFO("Septentrio GNSS receiver COM port: %s", com_port);
 		response_detected = false; // for future use
 
 	} else {
 		SBF_WARN("No COM port detected")
-		return -1;
+		return PX4_ERROR;
 	}
 
 	// Delete all sbf outputs on current COM port to remove clutter data
@@ -496,7 +501,7 @@ int SeptentrioGPS::configure(float heading_offset)
 	snprintf(msg, sizeof(msg), SBF_CONFIG_RESET, com_port);
 
 	if (!send_message_and_wait_for_ack(msg, SBF_CONFIG_TIMEOUT)) {
-		return -1; // connection and/or baudrate detection failed
+		return PX4_ERROR; // connection and/or baudrate detection failed
 	}
 
 	// Set baut rate
@@ -504,7 +509,7 @@ int SeptentrioGPS::configure(float heading_offset)
 
 	if (!send_message_and_wait_for_ack(msg, SBF_CONFIG_TIMEOUT)) {
 		SBF_DEBUG("Connection and/or baudrate detection failed (SBF_CONFIG_BAUDRATE)");
-		return -1; // connection and/or baudrate detection failed
+		return PX4_ERROR; // connection and/or baudrate detection failed
 	}
 
 	// Flush input and wait for at least 50 ms silence
@@ -520,18 +525,16 @@ int SeptentrioGPS::configure(float heading_offset)
 	snprintf(msg, sizeof(msg), SBF_DATA_IO, com_port);
 
 	if (!send_message_and_wait_for_ack(msg, SBF_CONFIG_TIMEOUT)) {
-		return -1;
+		return PX4_ERROR;
 	}
 
 	// Specify the offsets that the receiver applies to the computed attitude angles.
 	snprintf(msg, sizeof(msg), SBF_CONFIG_ATTITUDE_OFFSET, (double)(heading_offset * 180 / M_PI_F), (double)pitch_offset);
 
 	if (!send_message_and_wait_for_ack(msg, SBF_CONFIG_TIMEOUT)) {
-		return -1;
+		return PX4_ERROR;
 	}
 
-	// TODO: Make this configurable? There was a variable in the original driver, but unused...
-	// Set the type of dynamics the GNSS antenna is subjected to.
 	snprintf(msg, sizeof(msg), SBF_CONFIG_RECEIVER_DYNAMICS, "high");
 	send_message_and_wait_for_ack(msg, SBF_CONFIG_TIMEOUT);
 
@@ -548,7 +551,7 @@ int SeptentrioGPS::configure(float heading_offset)
 
 		if (!send_message_and_wait_for_ack(msg, SBF_CONFIG_TIMEOUT)) {
 			if (i >= 5) {
-				return -1; // connection and/or baudrate detection failed
+				return PX4_ERROR; // connection and/or baudrate detection failed
 			}
 
 		} else {
@@ -558,7 +561,7 @@ int SeptentrioGPS::configure(float heading_offset)
 
 	_configured = true;
 
-	return 0;
+	return PX4_OK;
 }
 
 int SeptentrioGPS::serial_open()
@@ -569,20 +572,22 @@ int SeptentrioGPS::serial_open()
 		if (_serial_fd < 0) {
 			PX4_ERR("failed to open %s err: %d", _port, errno);
 			px4_sleep(1);
-			return -1;
+			return PX4_ERROR;
 		}
 
 	}
 
-	return 0;
+	return PX4_OK;
 }
 
 int SeptentrioGPS::serial_close()
 {
-	int result = 0;
+	int result = PX4_OK;
 
 	if (_serial_fd >= 0) {
-		result = ::close(_serial_fd);
+		if (::close(_serial_fd) != 0) {
+			result = PX4_ERROR;
+		}
 		_serial_fd = -1;
 	}
 
@@ -678,10 +683,6 @@ int SeptentrioGPS::payload_rx_add(const uint8_t b)
 int SeptentrioGPS::payload_rx_done()
 {
 	int ret = 0;
-#ifndef NO_MKTIME
-	struct tm timeinfo;
-	time_t epoch;
-#endif
 
 	if (_buf.length <= 4 ||
 	    _buf.length > _rx_payload_index ||
@@ -771,7 +772,10 @@ int SeptentrioGPS::payload_rx_done()
 
 		_report_gps_pos.time_utc_usec = 0;
 #ifndef NO_MKTIME
-		/* convert to unix timestamp */
+		struct tm timeinfo;
+		time_t epoch;
+
+		// Convert to unix timestamp
 		memset(&timeinfo, 0, sizeof(timeinfo));
 
 		timeinfo.tm_year = 1980 - 1900;
@@ -804,7 +808,6 @@ int SeptentrioGPS::payload_rx_done()
 		_rate_count_vel++;
 		_rate_count_lat_lon++;
 		ret |= (_msg_status == 7) ? 1 : 0;
-		//SBF_DEBUG("PVTGeodetic handled");
 		break;
 
 	case SBF_ID_VelCovGeodetic: SBF_TRACE_RXMSG("Rx VelCovGeodetic");
@@ -1034,7 +1037,7 @@ int SeptentrioGPS::poll_or_read(uint8_t *buf, size_t buf_length, int timeout)
 
 #if !defined(__PX4_QURT)
 
-	/* For non QURT, use the usual polling. */
+	// For non QURT, use the usual polling.
 
 	// Poll only for the serial data. In the same thread we also need to handle orb messages,
 	// so ideally we would poll on both, the serial fd and orb subscription. Unfortunately the
@@ -1090,8 +1093,7 @@ int SeptentrioGPS::poll_or_read(uint8_t *buf, size_t buf_length, int timeout)
 	return ret;
 
 #else
-	/* For QURT, just use read for now, since this doesn't block, we need to slow it down
-	 * just a bit. */
+	// For QURT, just use read for now, since this doesn't block, we need to slow it down just a bit.
 	px4_usleep(10000);
 	return ::read(_serial_fd, buf, buf_length);
 #endif // !defined(__PX4_QURT)
@@ -1123,16 +1125,14 @@ int SeptentrioGPS::initialize_communication_dump()
 
 	if (!_dump_from_device || !_dump_to_device) {
 		PX4_ERR("failed to allocated dump data");
-		_dump_to_device = nullptr;
-		_dump_from_device = nullptr;
 		return PX4_ERROR;
 	}
 
 	memset(_dump_to_device, 0, sizeof(gps_dump_s));
 	memset(_dump_from_device, 0, sizeof(gps_dump_s));
 
-	//make sure to use a large enough queue size, so that we don't lose messages. You may also want
-	//to increase the logger rate for that.
+	// Make sure to use a large enough queue size, so that we don't lose
+	// messages. You may also want to increase the logger rate for that.
 	_dump_communication_pub.advertise();
 
 	_dump_communication_mode = (SeptentrioDumpCommMode)param_dump_comm;
@@ -1208,20 +1208,20 @@ int SeptentrioGPS::set_baudrate(unsigned baud)
 	/* set baud rate */
 	if ((termios_state = cfsetispeed(&uart_config, speed)) < 0) {
 		PX4_ERR("ERR: %d (cfsetispeed)", termios_state);
-		return -1;
+		return PX4_ERROR;
 	}
 
 	if ((termios_state = cfsetospeed(&uart_config, speed)) < 0) {
 		PX4_ERR("ERR: %d (cfsetospeed)", termios_state);
-		return -1;
+		return PX4_ERROR;
 	}
 
 	if ((termios_state = tcsetattr(_serial_fd, TCSANOW, &uart_config)) < 0) {
 		PX4_ERR("ERR: %d (tcsetattr)", termios_state);
-		return -1;
+		return PX4_ERROR;
 	}
 
-	return 0;
+	return PX4_OK;
 }
 
 void SeptentrioGPS::handle_inject_data_topic()
@@ -1232,16 +1232,14 @@ void SeptentrioGPS::handle_inject_data_topic()
 	gps_inject_data_s msg;
 
 	// If there has not been a valid RTCM message for a while, try to switch to a different RTCM link
-	// TODO: Change 5000000 back to 5_s (got header include errors)
-	if ((hrt_absolute_time() - _last_rtcm_injection_time) > 5000000) {
+	if ((hrt_absolute_time() - _last_rtcm_injection_time) > 5_s) {
 
 		for (int instance = 0; instance < _orb_inject_data_sub.size(); instance++) {
 			const bool exists = _orb_inject_data_sub[instance].advertised();
 
 			if (exists) {
 				if (_orb_inject_data_sub[instance].copy(&msg)) {
-					// TODO: Change 5000000 back to 5_s (got header include errors)
-					if ((hrt_absolute_time() - msg.timestamp) < 5000000) {
+					if ((hrt_absolute_time() - msg.timestamp) < 5_s) {
 						// Remember that we already did a copy on this instance.
 						already_copied = true;
 						_selected_rtcm_instance = instance;
@@ -1426,7 +1424,7 @@ void SeptentrioGPS::set_clock(timespec rtc_gps_time)
 	int drift_time = abs(rtc_system_time.tv_sec - rtc_gps_time.tv_sec);
 
     	// As of 2021 setting the time on Nuttx temporarily pauses interrupts so only set the time if it is very wrong.
-	if (drift_time >= SET_CLOCK_DRIFT_TIME_S) {
+	if (drift_time >= SSN_SET_CLOCK_DRIFT_TIME_S) {
 		// TODO: clock slewing of the RTC for small time differences
 		px4_clock_settime(CLOCK_REALTIME, &rtc_gps_time);
 	}

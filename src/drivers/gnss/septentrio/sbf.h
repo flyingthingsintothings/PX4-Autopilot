@@ -38,9 +38,9 @@
  * @brief Septentrio binary format (SBF) protocol definitions.
  */
 
-#define SBF_SYNC1 		0x24		///< Leading '$' of SBF blocks
-#define SBF_SYNC2 		0x40		///< Leading '@' of SBF blocks
-#define SBF_PVTGEODETIC_DNU	100000.0	///< Do-Not-Use value for PVTGeodetic
+#define SBF_SYNC1           0x24     ///< Leading '$' of SBF blocks
+#define SBF_SYNC2           0x40     ///< Leading '@' of SBF blocks
+#define SBF_PVTGEODETIC_DNU 100000.0 ///< Do-Not-Use value for PVTGeodetic
 
 // Block IDs
 #define SBF_ID_DOP            4001
@@ -50,7 +50,7 @@
 #define SBF_ID_AttEuler       5938
 #define SBF_ID_AttCovEuler    5939
 
-#pragma pack(push, 1)		// SBF protocol binary message and payload definitions
+#pragma pack(push, 1) // SBF protocol binary message and payload definitions
 
 typedef struct {
 	uint8_t mode_type: 4;       /**< Bit field indicating the PVT mode type, as follows:
@@ -251,30 +251,30 @@ uint8_t error_not_requested:
                                          Future functionality. The values are currently set to their Do-Not-Use values. */
 } sbf_payload_att_cov_euler;
 
-/* General message and payload buffer union */
+// General message and payload buffer union
 
 typedef struct {
 	uint16_t sync;              /** The Sync field is a 2-byte array always set to 0x24, 0x40. The first byte of every SBF block has
-									hexadecimal value 24 (decimal 36, ASCII '$'). The second byte of every SBF block has hexadecimal
-									value 40 (decimal 64, ASCII '@'). */
-	uint16_t crc16;                /** The CRC field is the 16-bit CRC of all the bytes in an SBF block from and including the ID field
-									to the last byte of the block. The generator polynomial for this CRC is the so-called CRC-CCITT
-									polynomial: x 16 + x 12 + x 5 + x 0 . The CRC is computed in the forward direction using a seed of 0, no
-									reverse and no final XOR. */
-uint16_t msg_id:
-	13;        /** The ID field is a 2-byte block ID, which uniquely identifies the block type and its contents */
-uint8_t msg_revision:
-	3;    /** block revision number, starting from 0 at the initial block definition, and incrementing
-                                    each time backwards - compatible changes are performed to the block  */
+                                        hexadecimal value 24 (decimal 36, ASCII '$'). The second byte of every SBF block has hexadecimal
+                                        value 40 (decimal 64, ASCII '@'). */
+	uint16_t crc16;             /** The CRC field is the 16-bit CRC of all the bytes in an SBF block from and including the ID field
+                                        to the last byte of the block. The generator polynomial for this CRC is the so-called CRC-CCITT
+                                        polynomial: x 16 + x 12 + x 5 + x 0 . The CRC is computed in the forward direction using a seed of 0, no
+                                        reverse and no final XOR. */
+	uint16_t msg_id:
+		13;                 /** The ID field is a 2-byte block ID, which uniquely identifies the block type and its contents */
+	uint8_t msg_revision:
+		3;                  /** block revision number, starting from 0 at the initial block definition, and incrementing
+                                        each time backwards - compatible changes are performed to the block  */
 	uint16_t length;            /** The Length field is a 2-byte unsigned integer containing the size of the SBF block.
-                                    It is the total number of bytes in the SBF block including the header.
-                                    It is always a multiple of 4. */
-	uint32_t TOW;               /**< Time-Of-Week: Time-tag, expressed in whole milliseconds from
-                                     the beginning of the current Galileo/GPSweek. */
-	uint16_t WNc;               /**< The GPS week number associated with the TOW. WNc is a continuous
-                                     weekcount (hence the "c"). It is not affected by GPS week roll overs,
-                                     which occur every 1024 weeks. By definition of the Galileo system time,
-                                     WNc is also the Galileo week number + 1024. */
+                                        It is the total number of bytes in the SBF block including the header.
+                                        It is always a multiple of 4. */
+	uint32_t TOW;               /** Time-Of-Week: Time-tag, expressed in whole milliseconds from
+                                        the beginning of the current Galileo/GPSweek. */
+	uint16_t WNc;               /** The GPS week number associated with the TOW. WNc is a continuous
+                                        weekcount (hence the "c"). It is not affected by GPS week roll overs,
+                                        which occur every 1024 weeks. By definition of the Galileo system time,
+                                        WNc is also the Galileo week number + 1024. */
 	union {
 		sbf_payload_pvt_geodetic_t payload_pvt_geodetic;
 		sbf_payload_vel_cov_geodetic_t payload_vel_col_geodetic;
@@ -286,4 +286,4 @@ uint8_t msg_revision:
 	uint8_t padding[16];
 } sbf_buf_t;
 
-#pragma pack(pop)		// End of SBF protocol binary message and payload definitions
+#pragma pack(pop) // End of SBF protocol binary message and payload definitions

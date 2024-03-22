@@ -33,9 +33,6 @@
 
 #include "util.h"
 
-/**
- * Calculate buffer CRC16
- */
 uint16_t crc16(const uint8_t *data_p, uint32_t length)
 {
 	uint8_t x;

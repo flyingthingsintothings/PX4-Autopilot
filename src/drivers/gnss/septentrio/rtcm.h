@@ -36,8 +36,8 @@
 #include <cstdint>
 
 /* RTCM3 */
-#define RTCM3_PREAMBLE					0xD3
-#define RTCM_INITIAL_BUFFER_LENGTH			300		/**< initial maximum message length of an RTCM message */
+#define RTCM3_PREAMBLE             0xD3
+#define RTCM_INITIAL_BUFFER_LENGTH 300  /**< initial maximum message length of an RTCM message */
 
 
 class RTCMParsing
@@ -63,8 +63,8 @@ public:
 	uint16_t messageId() const { return (_buffer[3] << 4) | (_buffer[4] >> 4); }
 
 private:
-	uint8_t			*_buffer{nullptr};
-	uint16_t		_buffer_len{};
-	uint16_t		_pos{};						///< next position in buffer
-	uint16_t		_message_length{};					///< message length without header & CRC (both 3 bytes)
+	uint8_t  *_buffer{nullptr};
+	uint16_t _buffer_len{};
+	uint16_t _pos{};            ///< next position in buffer
+	uint16_t _message_length{}; ///< message length without header & CRC (both 3 bytes)
 };

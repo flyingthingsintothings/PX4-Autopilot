@@ -53,6 +53,7 @@
 #include <uORB/topics/sensor_gnss_relative.h>
 #include <uORB/topics/sensor_gps.h>
 #include <uORB/topics/gps_dump.h>
+#include <uORB/topics/gps_inject_data.h>
 #include <lib/drivers/device/Device.hpp>
 #include <lib/parameters/param.h>
 
@@ -118,9 +119,12 @@ enum class SeptentrioGPSResetType {
 	Cold
 };
 
+/**
+ * The type of data the receiver should output.
+ */
 enum class SeptentrioGPSOutputMode {
-	GPS,		/**< Only GPS output */
-	GPSAndRTCM,	/**< GPS and RTCM output */
+	GPS,        ///< Only GPS output
+	GPSAndRTCM, ///< GPS and RTCM output
 };
 
 class SeptentrioGPS : public ModuleBase<SeptentrioGPS>, public device::Device
@@ -149,32 +153,32 @@ public:
 	 * @brief Reset the connected GPS receiver.
 	 *
 	 * @return 0 on success, -1 on not implemented, >0 on error
-	*/
+	 */
 	int reset(SeptentrioGPSResetType type);
 
 	/**
 	 * @brief Get the update rate for position information from the receiver.
 	 *
 	 * @return the position update rate of the receiver
-	*/
+	 */
 	float get_position_update_rate();
 
 	/**
 	 * @brief Get the update rate for velocity information from the receiver.
 	 *
 	 * @return the velocity update rate of the receiver
-	*/
+	 */
 	float get_velocity_update_rate();
 private:
 	/**
-	 * Schedule a reset of the connected receiver.
+	 * @brief Schedule a reset of the connected receiver.
 	 */
 	void schedule_reset(SeptentrioGPSResetType type);
 
 	/**
 	 * Configure the receiver.
 	 *
-	 * @return 0 on success, <0 otherwise
+	 * @return `PX4_OK` on success, `PX4_ERROR` otherwise
 	 */
 	int configure(float heading_offset);
 
@@ -183,7 +187,7 @@ private:
 	 * On error, wait a second and return.
 	 * Does nothing if the connection is already open.
 	 *
-	 * @return 0 on success, or -1 on error
+	 * @return `PX4_OK` on success, `PX4_ERROR` on error
 	 */
 	int serial_open();
 
@@ -191,8 +195,9 @@ private:
 	 * @brief Close the serial connection to the receiver.
 	 *
 	 * Does nothing if the connection is already closed.
+	 * If an error occurs while closing the file,`_serial_fd` is still set to -1.
 	 *
-	 * @return 0 on success or closed connection, -1 on error
+	 * @return `PX4_OK` on success or closed connection, `PX4_ERROR` on error
 	 */
 	int serial_close();
 
@@ -249,9 +254,9 @@ private:
 	/**
 	 * @brief Read from the receiver.
 	 *
-	 * @param buf		Data that is read
-	 * @param buf_length	Size of the buffer
-	 * @param timeout	Reading timeout
+	 * @param buf        Data that is read
+	 * @param buf_length Size of the buffer
+	 * @param timeout    Reading timeout
 	 *
 	 * @return 0 on nothing read or poll timeout, <0 on error and >0 on bytes read (nr of bytes)
 	*/
@@ -260,9 +265,9 @@ private:
 	/**
 	 * This is an abstraction for the poll on serial used.
 	 *
-	 * @param buf 		The read buffer
-	 * @param buf_length	Size of the read buffer
-	 * @param timeout	Read timeout in ms
+	 * @param buf        The read buffer
+	 * @param buf_length Size of the read buffer
+	 * @param timeout    Read timeout in ms
 	 *
 	 * @return 0 on nothing read or poll timeout, <0 on error and >0 on bytes read (nr of bytes)
 	 */
@@ -271,23 +276,23 @@ private:
 	/**
 	 * @brief Write to the receiver.
 	 *
-	 * @param buf 		Data to be written
-	 * @param buf_length 	Amount of bytes to be written
+	 * @param buf Data to be written
+	 * @param buf_length Amount of bytes to be written
 	 *
 	 * @return the number of bytes written on success, or -1 otherwise
-	*/
+	 */
 	int write(const uint8_t *buf, size_t buf_length);
 
 	/**
-	 * @brief Initialize GPS logging uORB topics and advertise them.
+	 * @brief Initialize uORB GPS logging and advertise the topic.
 	 *
-	 * @return PX4_OK on success, PX4_ERROR otherwise
+	 * @return `PX4_OK` on success, `PX4_ERROR` otherwise
 	 */
 	int initialize_communication_dump();
 
 	/**
 	 * @brief Reset the receiver if it was requested by the user.
-	*/
+	 */
 	void reset_if_scheduled();
 
 	/**
@@ -295,7 +300,7 @@ private:
 	 *
 	 * @param baud The baud rate of the connection
 	 *
-	 * @return 0 on success, <0 on error
+	 * @return `PX4_OK` on success, `PX4_ERROR` on otherwise
 	 */
 	int set_baudrate(unsigned baud);
 
@@ -347,10 +352,14 @@ private:
 	 */
 	void got_rtcm_message(uint8_t *data, size_t len);
 
-	// TODO: Document
+	/**
+	 * @brief Store the currently recorded update rates.
+	 */
 	void store_update_rates();
 
-	// TODO: Document
+	/**
+	 * @brief Reset the update rate measurement state.
+	 */
 	void reset_update_rates();
 
 	/**
@@ -360,43 +369,42 @@ private:
 	 */
 	void set_clock(timespec rtc_gps_time);
 
-	px4::atomic<SeptentrioGPSResetType>		_scheduled_reset{SeptentrioGPSResetType::None};						///< The type of receiver reset that is scheduled
-	SeptentrioGPSOutputMode 			_output_mode{SeptentrioGPSOutputMode::GPS};						/// TODO: Document
-	SeptentrioDumpCommMode                 		_dump_communication_mode{SeptentrioDumpCommMode::Disabled};				///< GPS communication dump mode
-	sbf_decode_state_t				_decode_state{SBF_DECODE_SYNC1};							///< State of the SBF parser
-	int						_serial_fd{-1};										///< The file descriptor used for communication with the receiver
-	char						_port[20] {};										///< The path of the used serial device
-	bool						_configured{false};									///< Configuration status of the connected receiver
-	uint64_t 					_last_timestamp_time{0};								/// TODO: Document
-	hrt_abstime					_last_rtcm_injection_time{0};								///< time of last rtcm injection
-	uint8_t 					_msg_status{0};										/// TODO: Document
-	uint16_t 					_rx_payload_index{0};									/// TODO: Document
-	sbf_buf_t 					_buf;											/// TODO: Document
-	RTCMParsing					*_rtcm_parsing{nullptr};								/// TODO: Document
-	satellite_info_s				*_p_report_sat_info{nullptr};								///< Pointer to uORB topic for satellite info
-	unsigned					_rate_reading{0}; 									///< Reading rate in B/s
-	sensor_gps_s					_report_gps_pos{};									///< uORB topic for gps position
-	GPSSatelliteInfo				*_sat_info{nullptr};									///< Instance of GPS sat info data object
-	gps_dump_s 					*_dump_to_device{nullptr};								/// TODO: Document
-	gps_dump_s 					*_dump_from_device{nullptr};								/// TODO: Document
-	uORB::Publication<gps_dump_s>	     		_dump_communication_pub{ORB_ID(gps_dump)};						/// TODO: Document
-	uORB::Publication<gps_inject_data_s> 		_gps_inject_data_pub{ORB_ID(gps_inject_data)};						/// TODO: Document
-	uORB::PublicationMulti<sensor_gps_s> 		_report_gps_pos_pub{ORB_ID(sensor_gps)};						///< uORB pub for gps position
-	uORB::PublicationMulti<satellite_info_s>	_report_sat_info_pub{ORB_ID(satellite_info)};						///< uORB pub for satellite info
-	uORB::PublicationMulti<sensor_gnss_relative_s>	_sensor_gnss_relative_pub{ORB_ID(sensor_gnss_relative)};				/// TODO: Document
-	uORB::SubscriptionMultiArray<gps_inject_data_s, gps_inject_data_s::MAX_INSTANCES> _orb_inject_data_sub{ORB_ID::gps_inject_data};	/// TODO: Document
-	uint8_t						_selected_rtcm_instance{0};								///< uORB instance that is being used for RTCM corrections
-	bool						_healthy{false};									///< Flag to signal if the GPS is OK
-	float						_rate{0.0f};										///< Position update rate
-	float 						_rate_lat_lon{0.0f};									/// TODO: Document
-	float 						_rate_vel{0.0f};									/// TODO: Document
-	float						_rate_rtcm_injection{0.0f};								///< RTCM message injection rate
-	unsigned					_last_rate_rtcm_injection_count{0};							///< Counter for number of RTCM messages
-	uint8_t						_rate_count_vel;									/// TODO: Document
-	uint8_t						_rate_count_lat_lon{};									/// TODO: Document
-	unsigned					_num_bytes_read{0}; 									///< Counter for number of read bytes from the UART (within update interval)
-	static constexpr int 				SET_CLOCK_DRIFT_TIME_S{5};								///< RTC drift time when time synchronization is needed (in seconds)
-	uint8_t                         		_spoofing_state{0};                             					///< Receiver spoofing state
-	uint8_t                        			_jamming_state{0};                              					///< Receiver jamming state
-	uint64_t 					_interval_rate_start{0};								/// TODO: Document
+	px4::atomic<SeptentrioGPSResetType>            _scheduled_reset{SeptentrioGPSResetType::None};                                   ///< The type of receiver reset that is scheduled
+	SeptentrioGPSOutputMode                        _output_mode{SeptentrioGPSOutputMode::GPS};                                       /// TODO: Document
+	SeptentrioDumpCommMode                         _dump_communication_mode{SeptentrioDumpCommMode::Disabled};                       ///< GPS communication dump mode
+	sbf_decode_state_t                             _decode_state{SBF_DECODE_SYNC1};                                                  ///< State of the SBF parser
+	int                                            _serial_fd{-1};                                                                   ///< The file descriptor used for communication with the receiver
+	char                                           _port[20] {};                                                                     ///< The path of the used serial device
+	bool                                           _configured{false};                                                               ///< Configuration status of the connected receiver
+	uint64_t                                       _last_timestamp_time{0};                                                          /// TODO: Document
+	hrt_abstime                                    _last_rtcm_injection_time{0};                                                     ///< time of last rtcm injection
+	uint8_t                                        _msg_status{0};                                                                   /// TODO: Document
+	uint16_t                                       _rx_payload_index{0};                                                             /// TODO: Document
+	sbf_buf_t                                      _buf;                                                                             /// TODO: Document
+	RTCMParsing                                    *_rtcm_parsing{nullptr};                                                          /// TODO: Document
+	satellite_info_s                               *_p_report_sat_info{nullptr};                                                     ///< Pointer to uORB topic for satellite info
+	unsigned                                       _rate_reading{0};                                                                 ///< Reading rate in B/s
+	sensor_gps_s                                   _report_gps_pos{};                                                                ///< uORB topic for gps position
+	GPSSatelliteInfo                               *_sat_info{nullptr};                                                              ///< Instance of GPS sat info data object
+	gps_dump_s                                     *_dump_to_device{nullptr};                                                        ///< uORB GPS dump data (to the receiver)
+	gps_dump_s                                     *_dump_from_device{nullptr};                                                      ///< uORB GPS dump data (from the receiver)
+	uORB::Publication<gps_dump_s>                  _dump_communication_pub{ORB_ID(gps_dump)};                                        ///< uORB topic used to dump GPS data
+	uORB::Publication<gps_inject_data_s>           _gps_inject_data_pub{ORB_ID(gps_inject_data)};                                    /// TODO: Document
+	uORB::PublicationMulti<sensor_gps_s>           _report_gps_pos_pub{ORB_ID(sensor_gps)};                                          ///< uORB pub for gps position
+	uORB::PublicationMulti<satellite_info_s>       _report_sat_info_pub{ORB_ID(satellite_info)};                                     ///< uORB pub for satellite info
+	uORB::PublicationMulti<sensor_gnss_relative_s> _sensor_gnss_relative_pub{ORB_ID(sensor_gnss_relative)};                          /// TODO: Document
+	uORB::SubscriptionMultiArray<gps_inject_data_s, gps_inject_data_s::MAX_INSTANCES> _orb_inject_data_sub{ORB_ID::gps_inject_data}; /// TODO: Document
+	uint8_t                                        _selected_rtcm_instance{0};                                                       ///< uORB instance that is being used for RTCM corrections
+	bool                                           _healthy{false};                                                                  ///< Flag to signal if the GPS is OK
+	float                                          _rate{0.0f};                                                                      ///< Position update rate
+	float                                          _rate_lat_lon{0.0f};                                                              /// TODO: Document
+	float                                          _rate_vel{0.0f};                                                                  /// TODO: Document
+	float                                          _rate_rtcm_injection{0.0f};                                                       ///< RTCM message injection rate
+	unsigned                                       _last_rate_rtcm_injection_count{0};                                               ///< Counter for number of RTCM messages
+	uint8_t                                        _rate_count_vel;                                                                  /// TODO: Document
+	uint8_t                                        _rate_count_lat_lon{};                                                            /// TODO: Document
+	unsigned                                       _num_bytes_read{0};                                                               ///< Counter for number of read bytes from the UART (within update interval)
+	uint8_t                                        _spoofing_state{0};                                                               ///< Receiver spoofing state
+	uint8_t                                        _jamming_state{0};                                                                ///< Receiver jamming state
+	uint64_t                                       _interval_rate_start{0};                                                          /// TODO: Document
 };
