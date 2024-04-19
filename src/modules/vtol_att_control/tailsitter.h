@@ -70,6 +70,7 @@ public:
 	void fill_actuator_outputs() override;
 	void waiting_on_tecs() override;
 	void blendThrottleAfterFrontTransition(float scale) override;
+	void blendThrottleBeginningBackTransition(float scale);
 
 private:
 	enum class vtol_mode {
