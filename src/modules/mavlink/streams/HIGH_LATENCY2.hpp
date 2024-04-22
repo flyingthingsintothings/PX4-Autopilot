@@ -131,6 +131,7 @@ private:
 			updated |= write_fw_ctrl_status_if_updated(&msg);
 			updated |= write_geofence_result_if_updated(&msg);
 			updated |= write_global_position_if_updated(&msg);
+			updated |= write_heading_if_updated(&msg);
 			updated |= write_mission_result_if_updated(&msg);
 			updated |= write_failsafe_flags(&msg);
 
@@ -384,7 +385,7 @@ private:
 	{
 		vehicle_attitude_s attitude;
 
-		if (_attitude_sub.update(&attitude)) {
+		if (_attitude_sub.update(&attitude) && _attitude_sub.copy(&attitude)) {
 
 			const matrix::Eulerf euler = matrix::Quatf(attitude.q);
 			msg->heading = static_cast<uint8_t>(math::degrees(matrix::wrap_2pi(euler.psi())) * 0.5f);
