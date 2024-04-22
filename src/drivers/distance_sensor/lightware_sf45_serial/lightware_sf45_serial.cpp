@@ -663,8 +663,6 @@ void SF45LaserSerial::sf45_process_replies(float *distance_m)
 
 			}
 
-			scaled_yaw = raw_yaw * SF45_SCALE_FACTOR;
-			
 			// The sensor is facing downward, so the sensor is flipped about it's x-axis -inverse of each yaw angle
 			if (_orient_cfg == 1) {
 				raw_yaw = raw_yaw * -1;
