@@ -37,7 +37,7 @@
         "editor.tabSize": 8,
         "editor.wordWrapColumn": 120,
         "explorer.openEditors.visible": 0,
-        "files.insertFinalNewline": true,
+        "files.insertFinalNewline": false,
         "files.trimTrailingWhitespace": true,
         "files.watcherExclude": {
                 "**/build/**": true

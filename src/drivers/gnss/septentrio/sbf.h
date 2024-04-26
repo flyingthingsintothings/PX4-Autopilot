@@ -46,6 +46,10 @@
 #define SBF_ID_DOP            4001
 #define SBF_ID_PVTGeodetic    4007
 #define SBF_ID_ChannelStatus  4013
+#define SBF_ID_ReceiverStatus 4014
+#define SBF_ID_QualityInd     4082
+#define SBF_ID_RFStatus       4092
+#define SBF_ID_GalAuthStatus  4245
 #define SBF_ID_VelCovGeodetic 5908
 #define SBF_ID_AttEuler       5938
 #define SBF_ID_AttCovEuler    5939
@@ -136,6 +140,231 @@ typedef struct {
 	uint16_t h_accuracy;
 	uint16_t v_accuracy;
 } sbf_payload_pvt_geodetic_t;
+
+typedef struct {
+	uint8_t  cpu_load;                           ///< Load on the receiver’s CPU. The load should stay below 80% in normal
+                                                     ///< operation. Higher loads might result in data loss.
+
+	/* Bit field reporting external errors, i.e. errors detected in external data.
+           Upon detection of an error, the corresponding bit is set for a duration of
+           one second, and then resets. */
+	uint8_t  ext_error_siserror: 1;              ///< SISERROR: set if a violation of the signal-in-space ICD has been
+                                                     ///< detected for at least one satellite while that satellite is re-
+                                                     ///< ported as healthy. Use the command "lif,SisError" for
+                                                     ///< details.
+	uint8_t  ext_error_diff_corr_error: 1;       ///< DIFFCORRERROR: set when an anomaly has been detected
+                                                     ///< in an incoming differential correction stream, causing the re-
+                                                     ///< ceiver to fail to decode the corrections. Use the command
+                                                     ///< "lif,DiffCorrError" for details.
+	uint8_t  ext_error_ext_sensor_error: 1;      ///< EXTSENSORERROR: set when a malfunction has been de-
+                                                     ///< tected on at least one of the external sensors connected to
+                                                     ///< the receiver. Use the command "lif, ExtSensorError"
+                                                     ///< for details.
+	uint8_t  ext_error_setup_error: 1;           ///< SETUPERROR: set when a configuration/setup error has been
+                                                     ///< detected. An example of such error is when a remote
+                                                     ///< NTRIP Caster is not reachable. Use the command "lif,
+                                                     ///< SetupError" for details.
+	uint8_t  ext_error_reserved: 4;              ///< Reserved
+
+	uint32_t uptime;                             ///< Number of seconds elapsed since the start-up of the receiver, or since
+                                                     ///< the last reset.
+
+	/* Bit field indicating the status of key components of the receiver. */
+	uint32_t rx_state_reserved1: 1;              ///< Reserved
+	uint32_t rx_state_active_antenna: 1;         ///< ACTIVEANTENNA: this bit is set when an active GNSS antenna
+                                                     ///< is sensed, i.e. when current is drawn from the antenna con-
+                                                     ///< nector.
+	uint32_t rx_state_ext_freq: 1;               ///< EXT_FREQ: this bit is set if an external frequency reference is
+                                                     ///< detected at the 10 MHz input, and cleared if the receiver uses
+                                                     ///< its own internal clock.
+	uint32_t rx_state_ext_time: 1;               ///< EXT_TIME: this bit is set if a pulse has been detected on the
+                                                     ///< TimeSync input.
+	uint32_t rx_state_wn_set: 1;                 ///< WNSET: see corresponding bit in the SyncLevel field of the
+                                                     ///< ReceiverTime block.
+	uint32_t rx_state_tow_set: 1;                ///< TOWSET: see corresponding bit in the SyncLevel field of the
+                                                     ///< ReceiverTime block.
+	uint32_t rx_state_fine_time: 1;              ///< FINETIME: see corresponding bit in the SyncLevel field of
+                                                     ///< the ReceiverTime block.
+	uint32_t rx_state_internal_disk_activity: 1; ///< INTERNALDISK_ACTIVITY: this bit is set for one second each
+                                                     ///< time data is logged to the internal disk (DSK1). If the logging
+                                                     ///< rate is larger than 1 Hz, set continuously.
+	uint32_t rx_state_internal_disk_full: 1;     ///< INTERNALDISK_FULL: this bit is set when the internal disk
+                                                     ///< (DSK1) is full. A disk is full when it is filled to 95% of its total
+                                                     ///< capacity.
+	uint32_t rx_state_internal_disk_mounted: 1;  ///< INTERNALDISK_MOUNTED: this bit is set when the internal
+                                                     ///< disk (DSK1) is mounted.
+	uint32_t rx_state_int_ant: 1;                ///< INT_ANT: this bit is set when the GNSS RF signal is taken from
+                                                     ///< the internal antenna input, and cleared when it comes from
+                                                     ///< the external antenna input (only applicable on receiver mod-
+                                                     ///< els featuring an internal antenna input).
+	uint32_t rx_state_refout_locked: 1;          ///< REFOUT_LOCKED: if set, the 10-MHz frequency provided at
+                                                     ///< the REF OUT connector is locked to GNSS time. Otherwise it
+                                                     ///< is free-running.
+	uint32_t rx_state_reserved2: 1;              ///< Reserved
+	uint32_t rx_state_external_disk_activity: 1; ///< EXTERNALDISK_ACTIVITY: this bit is set for one second each
+                                                     ///< time data is logged to the external disk (DSK2). If the logging
+                                                     ///< rate is larger than 1 Hz, set continuously.
+	uint32_t rx_state_external_disk_full: 1;     ///< EXTERNALDISK_FULL: this bit is set when the external disk
+                                                     ///< (DSK2) is full. A disk is full when it is filled to 95% of its total
+                                                     ///< capacity.
+	uint32_t rx_state_external_disk_mounted: 1;  ///< EXTERNALDISK_MOUNTED: this bit is set when the external
+                                                     ///< disk (DSK2) is mounted.
+	uint32_t rx_state_pps_in_cal: 1;             ///< PPS_IN_CAL: this bit is set when PPS IN delay calibration is on-
+                                                     ///< going. Only applicable to PolaRx5TR receivers.
+	uint32_t rx_state_diff_corr_in: 1;           ///< DIFFCORR_IN: this bit is set for one second each time differ-
+                                                     ///< ential corrections are decoded. If the input rate is larger than
+                                                     ///< 1 Hz, set continuously.
+	uint32_t rx_state_internet: 1;               ///< INTERNET: this bit is set when the receiver has Internet access.
+                                                     ///< If not set, there is either no Internet access, or the receiver
+                                                     ///< could not reliably determine the status.
+	uint32_t rx_state_reserved3: 13;             ///< Reserved
+
+	/* Bit field indicating whether an error occurred previously. If this field is
+           not equal to zero, at least one error has been detected. */
+	uint32_t rx_error_reserved1: 3;              ///< Reserved
+	uint32_t rx_error_software: 1;               ///< SOFTWARE: set upon detection of a software warning or error.
+                                                     ///< This bit is reset by the command "lif, error".
+	uint32_t rx_error_watchdog: 1;               ///< WATCHDOG: set when the watchdog expired at least once
+                                                     ///< since the last power-on.
+	uint32_t rx_error_antenna: 1;                ///< ANTENNA: set when antenna overcurrent condition is de-
+                                                     ///< tected.
+	uint32_t rx_error_congestion: 1;             ///< CONGESTION: set when an output data congestion has been
+                                                     ///< detected on at least one of the communication ports of the
+                                                     ///< receiver during the last second.
+	uint32_t rx_error_reserved2: 1;              ///< Reserved
+	uint32_t rx_error_missed_event: 1;           ///< MISSEDEVENT: set when an external event congestion has
+                                                     ///< been detected during the last second. It indicates that the re-
+                                                     ///< ceiver is receiving too many events on its EVENTx pins.
+	uint32_t rx_error_cpu_overload: 1;           ///< CPUOVERLOAD: set when the CPU load is larger than 90%.
+	uint32_t rx_error_invalid_config: 1;         ///< INVALIDCONFIG: set if one or more configuration file (e.g. per-
+                                                     ///< missions) is invalid or absent.
+	uint32_t rx_error_out_of_geofence: 1;        ///< OUTOFGEOFENCE: set if the receiver is currently out of its per-
+                                                     ///< mitted region of operation (geofencing).
+	uint32_t rx_error_reserved3: 22;             ///< Reserved
+
+	uint8_t n;                                   ///< Number of AGCState sub-blocks this block contains.
+	uint8_t sb_length;                           ///< Length of a AGCState sub-block.
+	uint8_t cmd_count;                           ///< Command cyclic counter, incremented each time a command is entered
+                                                     ///< that changes the receiver configuration. After the counter has reached
+                                                     ///< 255, it resets to 1.
+	uint8_t temperature;                         ///< Receiver temperature with an offset of 100. Remove 100 to get the tem-
+                                                     ///< perature in degree Celsius.
+} sbf_payload_receiver_status_t;
+
+typedef struct {
+	uint8_t type;        ///< Quality indicator type:
+                             ///<  0:  Overall quality
+                             ///<  1:  GNSS signals from main antenna
+                             ///<  2:  GNSS signals from aux1 antenna
+                             ///<  11: RF power level from the main antenna
+                             ///<  12: RF power level from the aux1 antenna
+                             ///<  21: CPU headroom
+                             ///<  25: OCXO stability (only available on PolaRx5S re-
+                             ///<      ceivers)
+                             ///<  30: Base station measurements. This indicator is
+                             ///<      only available in RTK mode. A low value could
+                             ///<      for example hint at severe multipath or inter-
+                             ///<      ference at the base station, or also at iono-
+                             ///<      spheric scintillation.
+                             ///<  31: RTK post-processing. This indicator is only
+                             ///<      available when the position mode is not RTK.
+                             ///<      It indicates the likelihood of getting a cm-
+                             ///<      accurate RTK position when post-processing
+                             ///<      the current data.
+	uint8_t value: 4;    ///< Value of this quality indicator (from 0 for low quality
+                             ///< to 10 for high quality, or 15 if unknown)
+	uint8_t reserved: 4; ///< Reserved for future use, to be ignored by decoding
+                             ///< software.
+} sbf_payload_quality_ind_sub_t;
+
+typedef struct {
+	uint8_t n;            ///< Number of quality indicators contained in this block
+	uint8_t reserved;     ///< Reserved for future use, to be ignored by decoding software.
+	sbf_payload_quality_ind_sub_t *indicators;
+} sbf_payload_quality_ind_t;
+
+typedef struct {
+	uint32_t frequency;          ///< Center frequency of the RF band addressed by this sub-block.
+	uint16_t bandwidth;          ///< Bandwidth of the RF band.
+
+	uint8_t  info_mode: 4;       ///< Mode:
+                                     ///<   1: This RF band is suppressed by a notch filter set manually with the com-
+                                     ///<      mand setNotchFiltering.
+                                     ///<   2: The receiver detected interference in this band, and successfully can-
+                                     ///<      celed it.
+                                     ///<   8: The receiver detected interference in this band. No mitigation applied.
+	uint8_t  info_reserved: 2;   ///< Reserved
+	uint8_t  info_antenna_id: 2; ///< 0 for main, 1 for Aux1 and 2 for Aux2
+} sbf_payload_rf_status_rf_band_t;
+
+typedef struct {
+	uint8_t n;                                       ///< Number of RF bands for which data is provided in this SBF block, i.e.
+                                                         ///< number of RFBand sub-blocks.
+	uint8_t sb_length;                               ///< Length of one sub-block
+
+	/* Bit field "Flags" */
+	uint8_t flags_inauthentic_gnss_signals: 1;       ///< Set when the receiver determined that the GNSS signals at its RF
+                                                         ///< connector may not be authentic and that its output (position or
+                                                         ///< raw measurements) may therefore be misleading. The receiver
+                                                         ///< may be connected to a GNSS simulator, or be subject to a spoof-
+                                                         ///< ing attack.
+                                                         ///< This bit is based on a set of built-in tests to check the authen-
+                                                         ///< ticity of the GNSS signals. In addition to those tests, Navigation
+                                                         ///< Message Authentication (NMA) is performed as well. If NMA ver-
+                                                         ///< ification fails, bit 1 is set instead.
+                                                         ///< Note that bit 0 may be set even if no interference is detected (i.e.
+                                                         ///< with no associated RFBand sub-blocks).
+	uint8_t flags_inauthentic_navigation_message: 1; ///< Set when a non-authentic navigation message is detected by
+                                                         ///< NMA checks (e.g. Galileo OSNMA or Fugro AtomiChron NMA).
+	uint8_t flags_reserved: 6;                       ///< Reserved
+
+	uint8_t reserved[3];                             ///< Reserved for future use, to be ignored by decoding software.
+	uint8_t rf_band;                                 ///< A succession of N RFBand sub-blocks, see definition below
+	uint8_t blocks;                                  ///< Start byte of the sub-blocks.
+} sbf_payload_rf_status_t;
+
+typedef struct {
+	/* Bit field "OSNMAStatus" */
+	uint16_t osnma_status_status: 3;                  ///< status:
+                                                          ///<   0: Disabled
+                                                          ///<   1: Initializing
+                                                          ///<   2: Waiting for trusted time information
+                                                          ///<   3: Init failed - inconsistent time
+                                                          ///<   4: Init failed - KROOT signature invalid
+                                                          ///<   5: Init failed - invalid param received
+                                                          ///<   6: Authenticating
+	uint16_t osnma_status_initialization_progress: 8; ///< OSNMA initialization progress, expressed in percent [0-100].
+                                                          ///< This value will only be encoded when the OSNMA Status is
+                                                          ///< initializing. A value of 255 indicates an alert condition of the
+                                                          ///< OSNMA operation resulting in OSNMA not being available.
+	uint16_t osnma_status_trusted_time_source: 3;     ///< Trusted time source:
+                                                          ///<   0: NTP
+                                                          ///<   1: L-Band
+                                                          ///<   7: Unknown
+	uint16_t osnma_status_merkle_tree_busy: 1;        ///< Indicates if the Merkle tree renewal is in progress:
+                                                          ///<   0: No
+                                                          ///<   1: Yes
+	uint16_t osnma_status_reserved: 1;                ///< Reserved
+
+	float trusted_time_delta;                         ///< Time difference between external trusted and receiver time, positive
+                                                          ///< when receiver time lags trusted time.
+	uint64_t gal_active_mask;                         ///< Bit field indicating the Galileo satellites for which OSNMA results are
+                                                          ///< available. If bit i is set, OSNMA authentication is available for Galileo
+                                                          ///< satellite i+1.
+	uint64_t gal_authentic_mask;                      ///< Bit field indicating the Galileo satellites successfully authenticated by
+                                                          ///< OSNMA. If bit i is set, the navigation message from Galileo satellite
+                                                          ///< i+1 is authentic. If bit i is not set and the corresponding bit is set in
+                                                          ///< GalActiveMask, the navigation message from that satellite is non-
+                                                          ///< authentic.
+	uint64_t gps_active_mask;                         ///< Bit field indicating the GPS satellites for which OSNMA results are avail-
+                                                          ///< able. If bit i is set, OSNMA authentication is available for GPS satellite
+                                                          ///< i+1.
+	uint64_t gps_authentic_mask;                      ///< Bit field indicating the GPS satellites successfully authenticated by OS-
+                                                          ///< NMA. If bit i is set, the navigation message from GPS satellite i+1
+                                                          ///< is authentic. If bit i is not set and the corresponding bit is set in
+                                                          ///< GpsActiveMask, the navigation message from that satellite is non-
+                                                          ///< authentic.
+} sbf_payload_gal_auth_status_t;
 
 typedef struct {
 	uint8_t mode_type: 4;       /**< Bit field indicating the PVT mode type, as follows:
@@ -277,6 +506,10 @@ uint8_t msg_revision:
                                         WNc is also the Galileo week number + 1024. */
 	union {
 		sbf_payload_pvt_geodetic_t payload_pvt_geodetic;
+		sbf_payload_receiver_status_t payload_receiver_status;
+		sbf_payload_quality_ind_t payload_quality_ind;
+		sbf_payload_rf_status_t payload_rf_status;
+		sbf_payload_gal_auth_status_t payload_gal_auth_status;
 		sbf_payload_vel_cov_geodetic_t payload_vel_col_geodetic;
 		sbf_payload_dop_t payload_dop;
 		sbf_payload_att_euler payload_att_euler;

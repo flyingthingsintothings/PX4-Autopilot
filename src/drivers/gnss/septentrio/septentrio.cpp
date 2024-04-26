@@ -52,8 +52,10 @@
 #include <matrix/math.hpp>
 #include <px4_platform_common/defines.h>
 #include <px4_platform_common/time.h>
+#include <px4_platform_common/events.h>
 #include <uORB/topics/gps_inject_data.h>
 
+#include "uORB/topics/sensor_gps.h"
 #include "util.h"
 
 using namespace time_literals;
@@ -97,7 +99,9 @@ using namespace time_literals;
 #define SBF_CONFIG_RESET_COLD "" \
 	SBF_FORCE_INPUT"ExeResetReceiver, hard, SatData\n"
 
-#define SBF_CONFIG "setSBFOutput, Stream1, %s, PVTGeodetic+VelCovGeodetic+DOP+AttEuler+AttCovEuler, msec100\n" /**< Configure the correct blocks for GPS positioning and heading */
+#define SBF_CONFIG "setSBFOutput, Stream1, %s, PVTGeodetic+VelCovGeodetic+DOP+AttEuler+AttCovEuler, msec100\n"      ///< Configure the correct blocks for GPS positioning and heading
+
+#define SBF_CONFIG_RESILIENCE "setSBFOutput, Stream2, %s, GalAuthStatus+RFStatus+QualityInd+ReceiverStatus, sec1\n" ///< Configure a stream with SBF blocks containing resilience information
 
 #define SBF_CONFIG_BAUDRATE "setCOMSettings, %s, baud%d\n"
 
@@ -150,7 +154,6 @@ SeptentrioGPS::~SeptentrioGPS()
 {
 	delete _dump_from_device;
 	delete _dump_to_device;
-	delete _rtcm_parsing;
 	delete _sat_info;
 }
 
@@ -200,15 +203,10 @@ void SeptentrioGPS::run()
 		// TODO: Not sure whether this is still correct when drivers are separate modules.
 		set_device_type(DRV_GPS_DEVTYPE_SBF);
 
-		if (_dump_communication_mode == SeptentrioDumpCommMode::RTCM) {
-			_output_mode = SeptentrioGPSOutputMode::GPSAndRTCM;
-
-		} else {
-			_output_mode = SeptentrioGPSOutputMode::GPS;
-		}
-
 		// If configuration is successful, start processing messages.
 		if (configure(heading_offset) == 0) {
+
+			PX4_INFO("Septentrio receiver correctly configured");
 
 			// Reset report
 			memset(&_report_gps_pos, 0, sizeof(_report_gps_pos));
@@ -429,12 +427,79 @@ void SeptentrioGPS::schedule_reset(SeptentrioGPSResetType reset_type)
 	_scheduled_reset.store((int)reset_type);
 }
 
+int SeptentrioGPS::detect_serial_port(char* const port_name) {
+	// Read buffer to get the COM port
+	char buf[GPS_READ_BUFFER_SIZE];
+	size_t buffer_offset = 0;   // The offset into the string where the next data should be read to.
+	hrt_abstime time_started = hrt_absolute_time();
+	bool response_detected = false;
+
+	// Receiver prints prompt after forcing input.
+	send_message(SBF_FORCE_INPUT);
+
+	do {
+		// Read at most the amount of available bytes in the buffer after the current offset, -1 because we need '\0' at the end for a valid string.
+		int read_result = read(reinterpret_cast<uint8_t *>(buf) + buffer_offset, sizeof(buf) - buffer_offset - 1, SBF_CONFIG_TIMEOUT);
+
+		if (read_result < 0) {
+			SBF_WARN("SBF read error");
+			return PX4_ERROR;
+		}
+
+		// Sanitize the data so it doesn't contain any `0` values.
+		for (size_t i = buffer_offset; i < buffer_offset + read_result; i++) {
+			if (buf[i] == 0) {
+				buf[i] = 1;
+			}
+		}
+
+		buffer_offset += read_result;
+
+		// Make sure the current buffer is a valid string.
+		buf[buffer_offset] = '\0';
+
+		char* port_name_address = strstr(buf, ">");
+
+		// Check if we found a port candidate.
+		if (buffer_offset > 4 && port_name_address != nullptr) {
+			size_t port_name_offset = reinterpret_cast<size_t>(port_name_address) - reinterpret_cast<size_t>(buf) - 4;
+			for (size_t i = 0; i < 4; i++) {
+				port_name[i] = buf[port_name_offset + i];
+			}
+			// NOTE: This limits the ports to serial and USB ports only. Otherwise the detection doesn't work correctly.
+			if (strstr(port_name, "COM") != nullptr || strstr(port_name, "USB") != nullptr) {
+				response_detected = true;
+				break;
+			}
+		}
+
+		if (buffer_offset + 1 >= sizeof(buf)) {
+			// Copy the last 3 bytes such that a half port isn't lost.
+			for (int i = 0; i < 4; i++) {
+				buf[i] = buf[sizeof(buf) - 4 + i];
+			}
+			buffer_offset = 3;
+		}
+	} while (time_started + 5 * 1000 * SBF_CONFIG_TIMEOUT > hrt_absolute_time());
+
+	if (!response_detected) {
+		SBF_WARN("No valid serial port detected");
+		return PX4_ERROR;
+	} else {
+		PX4_INFO("Serial port found: %s", port_name);
+		return PX4_OK;
+	}
+}
+
 int SeptentrioGPS::configure(float heading_offset)
 {
+	char com_port[5] {};
+	float pitch_offset = 0.f;
+	char msg[MSG_SIZE];
+
 	_configured = false;
 
 	param_t handle = param_find("SEP_PITCH_OFFS");
-	float pitch_offset = 0.f;
 
 	if (handle != PARAM_INVALID) {
 		param_get(handle, &pitch_offset);
@@ -444,62 +509,10 @@ int SeptentrioGPS::configure(float heading_offset)
 
 	send_message(SBF_FORCE_INPUT);
 
-	// flush input and wait for at least 50 ms silence
-	decode_init();
-	receive(50);
-	decode_init();
-
-	char buf[GPS_READ_BUFFER_SIZE];
-	char com_port[5] {};
-
-	size_t offset = 1;
-	bool response_detected = false;
-	hrt_abstime time_started = hrt_absolute_time();
-	send_message("\n\r");
-
-	// Read buffer to get the COM port
-	do {
-		--offset; //overwrite the null-char
-		int ret = read(reinterpret_cast<uint8_t *>(buf) + offset, sizeof(buf) - offset - 1, SBF_CONFIG_TIMEOUT);
-
-		if (ret < 0) {
-			// something went wrong when polling or reading
-			SBF_WARN("sbf poll_or_read err");
-			return PX4_ERROR;
-
-		}
-
-		offset += ret;
-		buf[offset++] = '\0';
-
-
-		char *p = strstr(buf, ">");
-
-		if (p) { //check if the length of the com port == 4 and contains a > sign
-			for (int i = 0; i < 4; i++) {
-				com_port[i] = buf[i];
-			}
-
-			response_detected = true;
-		}
-
-		if (offset >= sizeof(buf)) {
-			offset = 1;
-		}
-
-	} while (time_started + 1000 * SBF_CONFIG_TIMEOUT > hrt_absolute_time() && !response_detected);
-
-	if (response_detected) {
-		PX4_INFO("Septentrio GNSS receiver COM port: %s", com_port);
-		response_detected = false; // for future use
-
-	} else {
-		SBF_WARN("No COM port detected")
+	if (detect_serial_port(com_port) != PX4_OK)
 		return PX4_ERROR;
-	}
 
 	// Delete all sbf outputs on current COM port to remove clutter data
-	char msg[MSG_SIZE];
 	snprintf(msg, sizeof(msg), SBF_CONFIG_RESET, com_port);
 
 	if (!send_message_and_wait_for_ack(msg, SBF_CONFIG_TIMEOUT)) {
@@ -507,18 +520,14 @@ int SeptentrioGPS::configure(float heading_offset)
 	}
 
 	// Set baut rate
-	snprintf(msg, sizeof(msg), SBF_CONFIG_BAUDRATE, com_port, RECEIVER_BAUD_RATE);
+	if (strstr(com_port, "COM") != nullptr) {
+		snprintf(msg, sizeof(msg), SBF_CONFIG_BAUDRATE, com_port, RECEIVER_BAUD_RATE);
 
-	if (!send_message_and_wait_for_ack(msg, SBF_CONFIG_TIMEOUT)) {
-		SBF_DEBUG("Connection and/or baudrate detection failed (SBF_CONFIG_BAUDRATE)");
-		return PX4_ERROR; // connection and/or baudrate detection failed
+		if (!send_message_and_wait_for_ack(msg, SBF_CONFIG_TIMEOUT)) {
+			SBF_DEBUG("Connection and/or baudrate detection failed (SBF_CONFIG_BAUDRATE)");
+			return PX4_ERROR; // connection and/or baudrate detection failed
+		}
 	}
-
-	// Flush input and wait for at least 50 ms silence
-	decode_init();
-	receive(50);
-	decode_init();
-
 
 	// At this point we have correct baudrate on both ends
 	SBF_DEBUG("Correct baud rate on both ends");
@@ -538,28 +547,22 @@ int SeptentrioGPS::configure(float heading_offset)
 	}
 
 	snprintf(msg, sizeof(msg), SBF_CONFIG_RECEIVER_DYNAMICS, "high");
-	send_message_and_wait_for_ack(msg, SBF_CONFIG_TIMEOUT);
-
-	decode_init();
-	receive(50);
-	decode_init();
+	if (!send_message_and_wait_for_ack(msg, SBF_CONFIG_TIMEOUT)) {
+		return PX4_ERROR;
+	}
 
 	// Output a set of SBF blocks on a given connection at a regular interval.
-	int i = 0;
 	snprintf(msg, sizeof(msg), SBF_CONFIG, com_port);
+	if (!send_message_and_wait_for_ack(msg, SBF_CONFIG_TIMEOUT)) {
+		PX4_ERR("Failed to configure SBF");
+		return PX4_ERROR;
+	}
 
-	do {
-		++i;
-
-		if (!send_message_and_wait_for_ack(msg, SBF_CONFIG_TIMEOUT)) {
-			if (i >= 5) {
-				return PX4_ERROR; // connection and/or baudrate detection failed
-			}
-
-		} else {
-			response_detected = true;
-		}
-	} while (i < 5 && !response_detected);
+	snprintf(msg, sizeof(msg), SBF_CONFIG_RESILIENCE, com_port);
+	if (!send_message_and_wait_for_ack(msg, SBF_CONFIG_TIMEOUT)) {
+		PX4_ERR("Failed to configure resilience");
+		return PX4_ERROR;
+	}
 
 	_configured = true;
 
@@ -609,10 +612,6 @@ int SeptentrioGPS::parse_char(const uint8_t byte)
 			payload_rx_add(byte); // add a payload byte
 			_decode_state = SBF_DECODE_SYNC2;
 
-		} else if (byte == RTCM3_PREAMBLE && _rtcm_parsing) {
-			SBF_TRACE_PARSER("RTCM");
-			_decode_state = SBF_DECODE_RTCM3;
-			_rtcm_parsing->addByte(byte);
 		}
 
 		break;
@@ -648,15 +647,6 @@ int SeptentrioGPS::parse_char(const uint8_t byte)
 			// expecting more payload, stay in state SBF_DECODE_PAYLOAD
 			ret = 0;
 
-		}
-
-		break;
-
-	case SBF_DECODE_RTCM3:
-		if (_rtcm_parsing->addByte(byte)) {
-			SBF_DEBUG("got RTCM message with length %i", (int) _rtcm_parsing->messageLength());
-			got_rtcm_message(_rtcm_parsing->message(), _rtcm_parsing->messageLength());
-			decode_init();
 		}
 
 		break;
@@ -813,6 +803,91 @@ int SeptentrioGPS::payload_rx_done()
 		ret |= (_msg_status == 7) ? 1 : 0;
 		break;
 
+	case SBF_ID_ReceiverStatus: SBF_TRACE_RXMSG("Rx ReceiverStatus");
+		// NOTE: Maybe setting `_msg_status` is required.
+		if (_buf.payload_receiver_status.rx_error_cpu_overload && !(_report_gps_pos.system_error & sensor_gps_s::SYSTEM_ERROR_CPU_OVERLOAD))
+			events::send(events::ID("septentrio_problem_cpu_overload"), events::Log::Warning, "GPS receiver CPU overload");
+		if (_buf.payload_receiver_status.rx_error_antenna && !(_report_gps_pos.system_error & sensor_gps_s::SYSTEM_ERROR_ANTENNA))
+			events::send(events::ID("septentrio_problem_antenna"), events::Log::Warning, "GPS receiver antenna problem");
+		if (_buf.payload_receiver_status.rx_error_congestion && !(_report_gps_pos.system_error & sensor_gps_s::SYSTEM_ERROR_OUTPUT_CONGESTION))
+			events::send(events::ID("septentrio_problem_output_congestion"), events::Log::Warning, "GPS receiver output congestion");
+		if (_buf.payload_receiver_status.ext_error_diff_corr_error && !(_report_gps_pos.system_error & sensor_gps_s::SYSTEM_ERROR_INCOMING_CORRECTIONS))
+			events::send(events::ID("septentrio_problem_corrections_in"), events::Log::Warning, "GPS receiver faulty corrections input");
+		if (_buf.payload_receiver_status.rx_error_invalid_config && !(_report_gps_pos.system_error & sensor_gps_s::SYSTEM_ERROR_CONFIGURATION))
+			events::send(events::ID("septentrio_problem_configuration"), events::Log::Warning, "GPS receiver configuration problem");
+		if (_buf.payload_receiver_status.rx_error_software && !(_report_gps_pos.system_error & sensor_gps_s::SYSTEM_ERROR_SOFTWARE))
+			events::send(events::ID("septentrio_problem_software"), events::Log::Warning, "GPS receiver software problem");
+		if (_buf.payload_receiver_status.rx_error_missed_event && !(_report_gps_pos.system_error & sensor_gps_s::SYSTEM_ERROR_EVENT_CONGESTION))
+			events::send(events::ID("septentrio_problem_event_congestion"), events::Log::Warning, "GPS receiver event congestion");
+
+		_report_gps_pos.system_error = sensor_gps_s::SYSTEM_ERROR_OK;
+
+		if (_buf.payload_receiver_status.rx_error_cpu_overload)
+			_report_gps_pos.system_error |= sensor_gps_s::SYSTEM_ERROR_CPU_OVERLOAD;
+		if (_buf.payload_receiver_status.rx_error_antenna)
+			_report_gps_pos.system_error |= sensor_gps_s::SYSTEM_ERROR_ANTENNA;
+		if (_buf.payload_receiver_status.ext_error_diff_corr_error)
+			_report_gps_pos.system_error |= sensor_gps_s::SYSTEM_ERROR_INCOMING_CORRECTIONS;
+		if (_buf.payload_receiver_status.ext_error_setup_error)
+			_report_gps_pos.system_error |= sensor_gps_s::SYSTEM_ERROR_CONFIGURATION;
+		if (_buf.payload_receiver_status.rx_error_software)
+			_report_gps_pos.system_error |= sensor_gps_s::SYSTEM_ERROR_SOFTWARE;
+		if (_buf.payload_receiver_status.rx_error_congestion)
+			_report_gps_pos.system_error |= sensor_gps_s::SYSTEM_ERROR_OUTPUT_CONGESTION;
+		if (_buf.payload_receiver_status.rx_error_missed_event)
+			_report_gps_pos.system_error |= sensor_gps_s::SYSTEM_ERROR_EVENT_CONGESTION;
+
+		break;
+
+	case SBF_ID_RFStatus: SBF_TRACE_RXMSG("Rx RFStatus");
+		// NOTE: Maybe setting `_msg_status` is required.
+		_report_gps_pos.spoofing_state = sensor_gps_s::SPOOFING_STATE_NONE;
+		_report_gps_pos.jamming_state = sensor_gps_s::JAMMING_STATE_OK;
+		for (int i = 0; i < _buf.payload_rf_status.n; i++) {
+			// There are `n` sub-blocks of `sb_length` bytes. Use the size as an offset into the remainder of `_buf`.
+			sbf_payload_rf_status_rf_band_t* rf_band_data = reinterpret_cast<sbf_payload_rf_status_rf_band_t*>(&_buf.payload_rf_status.rf_band + i * _buf.payload_rf_status.sb_length);
+
+			switch (rf_band_data->info_mode) {
+			case 2:
+				_report_gps_pos.jamming_state = sensor_gps_s::JAMMING_STATE_CRITICAL;
+				_report_gps_pos.spoofing_state = sensor_gps_s::SPOOFING_STATE_INDICATED;
+				break;
+			case 8:
+				// As long as there is indicated but unmitigated spoofing in one band, don't report the overall state as mitigated
+				if (_report_gps_pos.spoofing_state == sensor_gps_s::SPOOFING_STATE_NONE) {
+					_report_gps_pos.jamming_state = sensor_gps_s::JAMMING_STATE_OK;
+					_report_gps_pos.spoofing_state = sensor_gps_s::SPOOFING_STATE_MITIGATED;
+				}
+			}
+		}
+
+		break;
+
+	case SBF_ID_GalAuthStatus: SBF_TRACE_RXMSG("Rx GalAuthStatus");
+		// NOTE: Maybe setting `_msg_status` is required.
+		switch (_buf.payload_gal_auth_status.osnma_status_status) {
+		case 0:
+			_report_gps_pos.authentication_state = sensor_gps_s::AUTHENTICATION_STATE_DISABLED;
+			break;
+		case 1:
+		case 2:
+			_report_gps_pos.authentication_state = sensor_gps_s::AUTHENTICATION_STATE_INITIALIZING;
+			break;
+		case 3:
+		case 4:
+		case 5:
+			_report_gps_pos.authentication_state = sensor_gps_s::AUTHENTICATION_STATE_FAILED;
+			break;
+		case 6:
+			_report_gps_pos.authentication_state = sensor_gps_s::AUTHENTICATION_STATE_OK;
+			break;
+		default:
+			_report_gps_pos.authentication_state = sensor_gps_s::AUTHENTICATION_STATE_UNKNOWN;
+			break;
+		}
+
+		break;
+
 	case SBF_ID_VelCovGeodetic: SBF_TRACE_RXMSG("Rx VelCovGeodetic");
 		_msg_status |= 2;
 		_report_gps_pos.s_variance_m_s = _buf.payload_vel_col_geodetic.cov_ve_ve;
@@ -912,16 +987,6 @@ void SeptentrioGPS::decode_init()
 {
 	_decode_state = SBF_DECODE_SYNC1;
 	_rx_payload_index = 0;
-
-	if (_output_mode == SeptentrioGPSOutputMode::GPSAndRTCM) {
-		if (!_rtcm_parsing) {
-			_rtcm_parsing = new RTCMParsing();
-		}
-
-		if (_rtcm_parsing) {
-			_rtcm_parsing->reset();
-		}
-	}
 }
 
 bool SeptentrioGPS::send_message(const char *msg)
@@ -934,11 +999,7 @@ bool SeptentrioGPS::send_message(const char *msg)
 
 bool SeptentrioGPS::send_message_and_wait_for_ack(const char *msg, const int timeout)
 {
-	SBF_DEBUG("Send MSG: %s", msg);
-
-	int length = strlen(msg);
-
-	if (write(reinterpret_cast<const uint8_t*>(msg), length) != length) {
+	if (!send_message(msg)) {
 		return false;
 	}
 
@@ -946,37 +1007,46 @@ bool SeptentrioGPS::send_message_and_wait_for_ack(const char *msg, const int tim
 	// For all valid set -, get - and exe -commands, the first line of the reply is an exact copy
 	// of the command as entered by the user, preceded with "$R:"
 	char buf[GPS_READ_BUFFER_SIZE];
-	size_t offset = 1;
+	size_t buffer_offset = 0;   // The offset into the string where the next data should be read to.
 	hrt_abstime time_started = hrt_absolute_time();
 
-	bool found_response = false;
-
 	do {
-		--offset; //overwrite the null-char
-		int ret = read(reinterpret_cast<uint8_t *>(buf) + offset, sizeof(buf) - offset - 1, timeout);
+		// Read at most the amount of available bytes in the buffer after the current offset, -1 because we need '\0' at the end for a valid string.
+		int read_result = read(reinterpret_cast<uint8_t *>(buf) + buffer_offset, sizeof(buf) - buffer_offset - 1, timeout);
 
-		if (ret < 0) {
-			// something went wrong when polling or reading
-			SBF_WARN("sbf poll_or_read err");
+		if (read_result < 0) {
+			SBF_WARN("SBF read error");
 			return false;
 		}
 
-		offset += ret;
-		buf[offset++] = '\0';
-
-		if (!found_response && strstr(buf, "$R: ") != nullptr) {
-			//SBF_DEBUG("READ %d: %s", (int) offset, buf);
-			found_response = true;
+		// Sanitize the data so it doesn't contain any `0` values.
+		for (size_t i = buffer_offset; i < buffer_offset + read_result; i++) {
+			if (buf[i] == 0) {
+				buf[i] = 1;
+			}
 		}
 
-		if (offset >= sizeof(buf)) {
-			offset = 1;
+		buffer_offset += read_result;
+
+		// Make sure the current buffer is a valid string.
+		buf[buffer_offset] = '\0';
+
+		if (strstr(buf, "$R: ") != nullptr) {
+			SBF_DEBUG("Response: received");
+			return true;
 		}
 
-	} while (time_started + 1000 * timeout > hrt_absolute_time());
+		if (buffer_offset + 1 >= sizeof(buf)) {
+			// Copy the last 3 bytes such that a half response isn't lost.
+			for (int i = 0; i < 4; i++) {
+				buf[i] = buf[sizeof(buf) - 4 + i];
+			}
+			buffer_offset = 3;
+		}
+	} while (time_started + 5 * 1000 * timeout > hrt_absolute_time());
 
-	SBF_DEBUG("response: %u", found_response)
-	return found_response;
+	SBF_DEBUG("Response: timeout");
+	return false;
 }
 
 int SeptentrioGPS::receive(unsigned timeout)
@@ -1399,12 +1469,6 @@ void SeptentrioGPS::dump_gps_data(const uint8_t *data, size_t len, SeptentrioDum
 			dump_data->len = 0;
 		}
 	}
-}
-
-void SeptentrioGPS::got_rtcm_message(uint8_t *data, size_t len)
-{
-	publish_rtcm_corrections(data, len);
-	dump_gps_data(data, len, SeptentrioDumpCommMode::RTCM, false);
 }
 
 void SeptentrioGPS::store_update_rates()

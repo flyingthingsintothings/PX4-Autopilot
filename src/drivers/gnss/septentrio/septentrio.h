@@ -57,14 +57,12 @@
 #include <lib/parameters/param.h>
 
 #include "sbf.h"
-#include "rtcm.h"
 
 /* Message decoder state */
 typedef enum {
 	SBF_DECODE_SYNC1 = 0,
 	SBF_DECODE_SYNC2,
 	SBF_DECODE_PAYLOAD,
-	SBF_DECODE_RTCM3,
 } sbf_decode_state_t;
 
 /**
@@ -173,6 +171,15 @@ private:
 	 * @brief Schedule a reset of the connected receiver.
 	 */
 	void schedule_reset(SeptentrioGPSResetType type);
+
+	/**
+	 * @brief Try to detect the serial port used on the receiver side.
+	 *
+	 * @param port_name A string with a length of 5 to store the result
+	 *
+	 * @return `PX4_OK` on success, `PX4_ERROR` on error
+	*/
+	int detect_serial_port(char* const port_name);
 
 	/**
 	 * Configure the receiver.
@@ -347,11 +354,6 @@ private:
 	void dump_gps_data(const uint8_t *data, size_t len, SeptentrioDumpCommMode mode, bool msg_to_gps_device);
 
 	/**
-	 * Handle an RTCM message.
-	 */
-	void got_rtcm_message(uint8_t *data, size_t len);
-
-	/**
 	 * @brief Store the currently recorded update rates.
 	 */
 	void store_update_rates();
@@ -369,7 +371,6 @@ private:
 	void set_clock(timespec rtc_gps_time);
 
 	px4::atomic<int>                               _scheduled_reset{(int)SeptentrioGPSResetType::None};                                   ///< The type of receiver reset that is scheduled
-	SeptentrioGPSOutputMode                        _output_mode{SeptentrioGPSOutputMode::GPS};                                       ///< The type of data the receiver should output
 	SeptentrioDumpCommMode                         _dump_communication_mode{SeptentrioDumpCommMode::Disabled};                       ///< GPS communication dump mode
 	sbf_decode_state_t                             _decode_state{SBF_DECODE_SYNC1};                                                  ///< State of the SBF parser
 	int                                            _serial_fd{-1};                                                                   ///< The file descriptor used for communication with the receiver
@@ -379,9 +380,7 @@ private:
 	hrt_abstime                                    _last_rtcm_injection_time{0};                                                     ///< Time of last RTCM injection
 	uint8_t                                        _msg_status{0};
 	uint16_t                                       _rx_payload_index{0};                                                             ///< State for the message parser
-	sbf_buf_t
-	_buf;                                                                             ///< The complete received message
-	RTCMParsing                                    *_rtcm_parsing{nullptr};                                                          ///< RTCM message parser
+	sbf_buf_t                                      _buf;                                                                             ///< The complete received message
 	uint8_t                                        _selected_rtcm_instance{0};                                                       ///< uORB instance that is being used for RTCM corrections
 	bool                                           _healthy{false};                                                                  ///< Flag to signal if the GPS is OK
 	uint8_t                                        _spoofing_state{0};                                                               ///< Receiver spoofing state

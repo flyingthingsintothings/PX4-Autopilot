@@ -89,6 +89,70 @@ private:
 			msg.h_acc = gps.eph * 1e3f;              // position uncertainty in mm
 			msg.v_acc = gps.epv * 1e3f;              // altitude uncertainty in mm
 			msg.vel_acc = gps.s_variance_m_s * 1e3f; // speed uncertainty in mm
+			if (gps.system_error & sensor_gps_s::SYSTEM_ERROR_CPU_OVERLOAD)
+				msg.system_errors |= GPS_SYSTEM_ERROR_CPU_OVERLOAD;
+			if (gps.system_error & sensor_gps_s::SYSTEM_ERROR_ANTENNA)
+				msg.system_errors |= GPS_SYSTEM_ERROR_ANTENNA;
+			if (gps.system_error & sensor_gps_s::SYSTEM_ERROR_OUTPUT_CONGESTION)
+				msg.system_errors |= GPS_SYSTEM_ERROR_OUTPUT_CONGESTION;
+			if (gps.system_error & sensor_gps_s::SYSTEM_ERROR_INCOMING_CORRECTIONS)
+				msg.system_errors |= GPS_SYSTEM_ERROR_INCOMING_CORRECTIONS;
+			if (gps.system_error & sensor_gps_s::SYSTEM_ERROR_CONFIGURATION)
+				msg.system_errors |= GPS_SYSTEM_ERROR_CONFIGURATION;
+			if (gps.system_error & sensor_gps_s::SYSTEM_ERROR_EVENT_CONGESTION)
+				msg.system_errors |= GPS_SYSTEM_ERROR_EVENT_CONGESTION;
+			if (gps.system_error & sensor_gps_s::SYSTEM_ERROR_SOFTWARE)
+				msg.system_errors |= GPS_SYSTEM_ERROR_SOFTWARE;
+
+			switch (gps.authentication_state) {
+			case sensor_gps_s::AUTHENTICATION_STATE_UNKNOWN:
+			default:
+				msg.authentication_state = GPS_AUTHENTICATION_STATE_UNKNOWN;
+				break;
+			case sensor_gps_s::AUTHENTICATION_STATE_DISABLED:
+				msg.authentication_state = GPS_AUTHENTICATION_STATE_DISABLED;
+				break;
+			case sensor_gps_s::AUTHENTICATION_STATE_FAILED:
+				msg.authentication_state = GPS_AUTHENTICATION_STATE_ERROR;
+				break;
+			case sensor_gps_s::AUTHENTICATION_STATE_INITIALIZING:
+				msg.authentication_state = GPS_AUTHENTICATION_STATE_INITIALIZING;
+				break;
+			case sensor_gps_s::AUTHENTICATION_STATE_OK:
+				msg.authentication_state = GPS_AUTHENTICATION_STATE_OK;
+				break;
+			}
+
+			switch (gps.jamming_state) {
+			case sensor_gps_s::JAMMING_STATE_UNKNOWN:
+			default:
+				msg.jamming_state = GPS_JAMMING_STATE_UNKNOWN;
+				break;
+			case sensor_gps_s::JAMMING_STATE_OK:
+				msg.jamming_state = GPS_JAMMING_STATE_OK;
+				break;
+			case sensor_gps_s::JAMMING_STATE_WARNING:
+			case sensor_gps_s::JAMMING_STATE_CRITICAL:
+				msg.jamming_state = GPS_JAMMING_STATE_DETECTED;
+				break;
+			}
+
+			switch (gps.spoofing_state) {
+			case sensor_gps_s::SPOOFING_STATE_UNKNOWN:
+			default:
+				msg.spoofing_state = GPS_SPOOFING_STATE_UNKNOWN;
+				break;
+			case sensor_gps_s::SPOOFING_STATE_NONE:
+				msg.spoofing_state = GPS_SPOOFING_STATE_OK;
+				break;
+			case sensor_gps_s::SPOOFING_STATE_INDICATED:
+			case sensor_gps_s::SPOOFING_STATE_MULTIPLE:
+				msg.spoofing_state = GPS_SPOOFING_STATE_DETECTED;
+				break;
+			case sensor_gps_s::SPOOFING_STATE_MITIGATED:
+				msg.spoofing_state = GPS_SPOOFING_STATE_MITIGATED;
+				break;
+			}
 
 			if (PX4_ISFINITE(gps.heading)) {
 				if (fabsf(gps.heading) < FLT_EPSILON) {
