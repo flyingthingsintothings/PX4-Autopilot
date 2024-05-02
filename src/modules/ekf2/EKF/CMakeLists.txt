@@ -31,29 +31,28 @@
 #
 ############################################################################
 
-add_subdirectory(bias_estimator)
 add_subdirectory(output_predictor)
 
 set(EKF_LIBS)
 set(EKF_SRCS)
 list(APPEND EKF_SRCS
+	bias_estimator.cpp
 	control.cpp
 	covariance.cpp
 	ekf.cpp
 	ekf_helper.cpp
 	estimator_interface.cpp
+	fake_height_control.cpp
+	fake_pos_control.cpp
 	height_control.cpp
+	imu_down_sampler.cpp
 	velocity_fusion.cpp
 	position_fusion.cpp
 	yaw_fusion.cpp
+	zero_innovation_heading_update.cpp
 
-	imu_down_sampler/imu_down_sampler.cpp
-
-	aid_sources/fake_height_control.cpp
-	aid_sources/fake_pos_control.cpp
 	aid_sources/ZeroGyroUpdate.cpp
 	aid_sources/ZeroVelocityUpdate.cpp
-	aid_sources/zero_innovation_heading_update.cpp
 )
 
 if(CONFIG_EKF2_AIRSPEED)
@@ -61,7 +60,7 @@ if(CONFIG_EKF2_AIRSPEED)
 endif()
 
 if(CONFIG_EKF2_AUX_GLOBAL_POSITION)
-	list(APPEND EKF_SRCS aid_sources/aux_global_position/aux_global_position.cpp)
+	list(APPEND EKF_SRCS aux_global_position.cpp)
 endif()
 
 if(CONFIG_EKF2_AUXVEL)
@@ -109,8 +108,9 @@ endif()
 
 if(CONFIG_EKF2_MAGNETOMETER)
 	list(APPEND EKF_SRCS
-		aid_sources/magnetometer/mag_control.cpp
-		aid_sources/magnetometer/mag_fusion.cpp
+		mag_3d_control.cpp
+		mag_control.cpp
+		mag_fusion.cpp
 	)
 endif()
 
@@ -134,7 +134,7 @@ if(CONFIG_EKF2_SIDESLIP)
 endif()
 
 if(CONFIG_EKF2_TERRAIN)
-	list(APPEND EKF_SRCS terrain_estimator/terrain_estimator.cpp)
+	list(APPEND EKF_SRCS terrain_estimator.cpp)
 endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
@@ -147,7 +147,6 @@ target_include_directories(ecl_EKF PUBLIC ${EKF_GENERATED_DERIVATION_INCLUDE_PAT
 
 target_link_libraries(ecl_EKF
 	PRIVATE
-		bias_estimator
 		geo
 		output_predictor
 		world_magnetic_model

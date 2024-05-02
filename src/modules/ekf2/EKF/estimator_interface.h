@@ -63,7 +63,7 @@
 
 #include "common.h"
 #include "RingBuffer.h"
-#include "imu_down_sampler/imu_down_sampler.hpp"
+#include "imu_down_sampler.hpp"
 #include "output_predictor/output_predictor.h"
 
 #if defined(CONFIG_EKF2_RANGE_FINDER)
@@ -401,6 +401,7 @@ protected:
 
 # if defined(CONFIG_EKF2_GNSS_YAW)
 	// innovation consistency check monitoring ratios
+	AlphaFilter<float> _gnss_yaw_signed_test_ratio_lpf{0.1f}; // average signed test ratio used to detect a bias in the state
 	uint64_t _time_last_gps_yaw_buffer_push{0};
 # endif // CONFIG_EKF2_GNSS_YAW
 #endif // CONFIG_EKF2_GNSS
