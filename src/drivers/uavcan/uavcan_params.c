@@ -107,29 +107,9 @@ PARAM_DEFINE_FLOAT(UAVCAN_RNG_MAX, 200.0f);
  * @unit liters
  * @decimal 1
  * @increment 0.1
- * @reboot_required true
  * @group UAVCAN
  */
 PARAM_DEFINE_FLOAT(UAVCAN_ECU_MAXF, 15.0f);
-
-/**
- * UAVCAN fuel tank fuel type
- *
- * This parameter defines the type of fuel used in the vehicle's fuel tank.
- *
- * 0: Unknown
- * 1: Liquid (e.g., gasoline, diesel)
- * 2: Gas (e.g., hydrogen, methane, propane)
- *
- * @min 0
- * @max 2
- * @value 0 Unknown
- * @value 1 Liquid
- * @value 2 Gas
- * @reboot_required true
- * @group UAVCAN
- */
-PARAM_DEFINE_INT32(UAVCAN_ECU_FUELT, 1);
 
 /**
  * UAVCAN ANTI_COLLISION light operating mode

@@ -39,6 +39,7 @@
 #include "fuel_tank_status.hpp"
 
 #include <parameters/param.h>
+#include <uORB/topics/fuel_tank_status.h>
 
 const char *const UavcanFuelTankStatusBridge::NAME = "fuel_tank_status";
 
@@ -57,12 +58,6 @@ int UavcanFuelTankStatusBridge::init()
 		return res;
 	}
 
-	// Fetch maximum fuel capacity (in liters)
-	param_get(param_find("UAVCAN_ECU_MAXF"), &_max_fuel_capacity);
-
-	// Fetching fuel type
-	param_get(param_find("UAVCAN_ECU_FUELT"), &_fuel_type);
-
 	return 0;
 }
 
@@ -71,9 +66,17 @@ void UavcanFuelTankStatusBridge::fuel_tank_status_sub_cb(const
 {
 	auto report = ::fuel_tank_status_s();
 	report.timestamp = hrt_absolute_time();
-	report.maximum_fuel_capacity = _max_fuel_capacity * 1000.0f; // convert to ml
-	report.fuel_type = static_cast<uint8_t>(_fuel_type);
-	report.consumed_fuel = NAN; // only the remaining fuel is measured
+
+	// Fetching maximum fuel capacity (in liters) from a parameter
+	param_get(param_find("UAVCAN_ECU_MAXF"), &_max_fuel_capacity);
+
+	_max_fuel_capacity *= 1000.0f;
+	report.maximum_fuel_capacity = _max_fuel_capacity;
+	report.fuel_type = fuel_tank_status_s::MAV_FUEL_TYPE_LIQUID;
+
+	// Calculating consumed fuel based on available fuel
+	report.consumed_fuel = (_max_fuel_capacity > msg.available_fuel_volume_cm3) ? _max_fuel_capacity -
+			       msg.available_fuel_volume_cm3 : NAN;
 	report.fuel_consumption_rate = msg.fuel_consumption_rate_cm3pm / 60.0f; // convert to ml/s
 	report.percent_remaining = msg.available_fuel_volume_percent;
 	report.remaining_fuel = msg.available_fuel_volume_cm3;
