@@ -915,6 +915,7 @@ def main():
                         break
 
                     except (RuntimeError, serial.SerialException):
+
                         if not up.send_reboot(args.use_protocol_splitter_format):
                             break
 
