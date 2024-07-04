@@ -163,26 +163,22 @@ void Ekf::predictCovariance(const imuSample &imu_delayed)
 
 
 #if defined(CONFIG_EKF2_MAGNETOMETER)
-	// mag_I: add process noise
-	float mag_I_sig = dt * math::constrain(_params.mage_p_noise, 0.f, 1.f);
-	float mag_I_process_noise = sq(mag_I_sig);
+	if (_control_status.flags.mag) {
+		// mag_I: add process noise
+		float mag_I_sig = dt * math::constrain(_params.mage_p_noise, 0.f, 1.f);
+		float mag_I_process_noise = sq(mag_I_sig);
 
-	for (unsigned index = 0; index < State::mag_I.dof; index++) {
-		const unsigned i = State::mag_I.idx + index;
-
-		if (P(i, i) < sq(_params.mag_noise)) {
+		for (unsigned index = 0; index < State::mag_I.dof; index++) {
+			const unsigned i = State::mag_I.idx + index;
 			P(i, i) += mag_I_process_noise;
 		}
-	}
 
-	// mag_B: add process noise
-	float mag_B_sig = dt * math::constrain(_params.magb_p_noise, 0.f, 1.f);
-	float mag_B_process_noise = sq(mag_B_sig);
+		// mag_B: add process noise
+		float mag_B_sig = dt * math::constrain(_params.magb_p_noise, 0.f, 1.f);
+		float mag_B_process_noise = sq(mag_B_sig);
 
-	for (unsigned index = 0; index < State::mag_B.dof; index++) {
-		const unsigned i = State::mag_B.idx + index;
-
-		if (P(i, i) < sq(_params.mag_noise)) {
+		for (unsigned index = 0; index < State::mag_B.dof; index++) {
+			const unsigned i = State::mag_B.idx + index;
 			P(i, i) += mag_B_process_noise;
 		}
 	}
@@ -286,39 +282,20 @@ void Ekf::resetQuatCov(const Vector3f &rot_var_ned)
 	P.uncorrelateCovarianceSetVariance<State::quat_nominal.dof>(State::quat_nominal.idx, rot_var_ned);
 }
 
-void Ekf::resetGyroBiasCov()
-{
-	// Zero the corresponding covariances and set
-	// variances to the values use for initial alignment
-	P.uncorrelateCovarianceSetVariance<State::gyro_bias.dof>(State::gyro_bias.idx, sq(_params.switch_on_gyro_bias));
-}
-
-void Ekf::resetGyroBiasZCov()
-{
-	P.uncorrelateCovarianceSetVariance<1>(State::gyro_bias.idx + 2, sq(_params.switch_on_gyro_bias));
-}
-
-void Ekf::resetAccelBiasCov()
-{
-	// Zero the corresponding covariances and set
-	// variances to the values use for initial alignment
-	P.uncorrelateCovarianceSetVariance<State::accel_bias.dof>(State::accel_bias.idx, sq(_params.switch_on_accel_bias));
-}
-
 #if defined(CONFIG_EKF2_MAGNETOMETER)
 void Ekf::resetMagCov()
 {
-	ECL_INFO("reset mag covariance");
+	if (_mag_decl_cov_reset) {
+		ECL_INFO("reset mag covariance");
+		_mag_decl_cov_reset = false;
+	}
 
 	P.uncorrelateCovarianceSetVariance<State::mag_I.dof>(State::mag_I.idx, sq(_params.mag_noise));
 	P.uncorrelateCovarianceSetVariance<State::mag_B.dof>(State::mag_B.idx, sq(_params.mag_noise));
 }
 #endif // CONFIG_EKF2_MAGNETOMETER
 
-#if defined(CONFIG_EKF2_WIND)
-void Ekf::resetWindCov()
+void Ekf::resetGyroBiasZCov()
 {
-	// start with a small initial uncertainty to improve the initial estimate
-	P.uncorrelateCovarianceSetVariance<State::wind_vel.dof>(State::wind_vel.idx, sq(_params.initial_wind_uncertainty));
+	P.uncorrelateCovarianceSetVariance<1>(State::gyro_bias.idx + 2, sq(_params.switch_on_gyro_bias));
 }
-#endif // CONFIG_EKF2_WIND

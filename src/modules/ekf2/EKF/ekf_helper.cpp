@@ -56,6 +56,43 @@ bool Ekf::isHeightResetRequired() const
 	return (continuous_bad_accel_hgt || hgt_fusion_timeout);
 }
 
+#if defined(CONFIG_EKF2_BARO_COMPENSATION)
+float Ekf::compensateBaroForDynamicPressure(const float baro_alt_uncompensated) const
+{
+	if (_control_status.flags.wind && local_position_is_valid()) {
+		// calculate static pressure error = Pmeas - Ptruth
+		// model position error sensitivity as a body fixed ellipse with a different scale in the positive and
+		// negative X and Y directions. Used to correct baro data for positional errors
+
+		// Calculate airspeed in body frame
+		const Vector3f vel_imu_rel_body_ned = _R_to_earth * (_ang_rate_delayed_raw % _params.imu_pos_body);
+		const Vector3f velocity_earth = _state.vel - vel_imu_rel_body_ned;
+
+		const Vector3f wind_velocity_earth(_state.wind_vel(0), _state.wind_vel(1), 0.0f);
+
+		const Vector3f airspeed_earth = velocity_earth - wind_velocity_earth;
+
+		const Vector3f airspeed_body = _state.quat_nominal.rotateVectorInverse(airspeed_earth);
+
+		const Vector3f K_pstatic_coef(
+			airspeed_body(0) >= 0.f ? _params.static_pressure_coef_xp : _params.static_pressure_coef_xn,
+			airspeed_body(1) >= 0.f ? _params.static_pressure_coef_yp : _params.static_pressure_coef_yn,
+			_params.static_pressure_coef_z);
+
+		const Vector3f airspeed_squared = matrix::min(airspeed_body.emult(airspeed_body), sq(_params.max_correction_airspeed));
+
+		const float pstatic_err = 0.5f * _air_density * (airspeed_squared.dot(K_pstatic_coef));
+
+		// correct baro measurement using pressure error estimate and assuming sea level gravity
+		return baro_alt_uncompensated + pstatic_err / (_air_density * CONSTANTS_ONE_G);
+	}
+
+	// otherwise return the uncorrected baro measurement
+	return baro_alt_uncompensated;
+}
+#endif // CONFIG_EKF2_BARO_COMPENSATION
+
+// calculate the earth rotation vector
 Vector3f Ekf::calcEarthRateNED(float lat_rad) const
 {
 	return Vector3f(CONSTANTS_EARTH_SPIN_RATE * cosf(lat_rad),
@@ -96,8 +133,8 @@ bool Ekf::setEkfGlobalOrigin(const double latitude, const double longitude, cons
 		_gps_alt_ref = altitude;
 
 #if defined(CONFIG_EKF2_MAGNETOMETER)
-		const float mag_declination_gps = math::radians(get_mag_declination_degrees(latitude, longitude));
-		const float mag_inclination_gps = math::radians(get_mag_inclination_degrees(latitude, longitude));
+		const float mag_declination_gps = get_mag_declination_radians(latitude, longitude);
+		const float mag_inclination_gps = get_mag_inclination_radians(latitude, longitude);
 		const float mag_strength_gps = get_mag_strength_gauss(latitude, longitude);
 
 		if (PX4_ISFINITE(mag_declination_gps) && PX4_ISFINITE(mag_inclination_gps) && PX4_ISFINITE(mag_strength_gps)) {
@@ -198,6 +235,7 @@ void Ekf::get_ekf_lpos_accuracy(float *ekf_eph, float *ekf_epv) const
 	*ekf_epv = sqrtf(P(State::pos.idx + 2, State::pos.idx + 2));
 }
 
+// get the 1-sigma horizontal and vertical velocity uncertainty
 void Ekf::get_ekf_vel_accuracy(float *ekf_evh, float *ekf_evv) const
 {
 	float hvel_err = sqrtf(P.trace<2>(State::vel.idx));
@@ -238,6 +276,13 @@ void Ekf::get_ekf_vel_accuracy(float *ekf_evh, float *ekf_evv) const
 	*ekf_evv = sqrtf(P(State::vel.idx + 2, State::vel.idx + 2));
 }
 
+/*
+Returns the following vehicle control limits required by the estimator to keep within sensor limitations.
+vxy_max : Maximum ground relative horizontal speed (meters/sec). NaN when limiting is not needed.
+vz_max : Maximum ground relative vertical speed (meters/sec). NaN when limiting is not needed.
+hagl_min : Minimum height above ground (meters). NaN when limiting is not needed.
+hagl_max : Maximum height above ground (meters). NaN when limiting is not needed.
+*/
 void Ekf::get_ekf_ctrl_limits(float *vxy_max, float *vz_max, float *hagl_min, float *hagl_max) const
 {
 	// Do not require limiting by default
@@ -285,12 +330,25 @@ void Ekf::get_ekf_ctrl_limits(float *vxy_max, float *vz_max, float *hagl_min, fl
 #endif // CONFIG_EKF2_RANGE_FINDER
 }
 
+void Ekf::resetImuBias()
+{
+	resetGyroBias();
+	resetAccelBias();
+}
+
 void Ekf::resetGyroBias()
 {
 	// Zero the gyro bias states
 	_state.gyro_bias.zero();
 
 	resetGyroBiasCov();
+}
+
+void Ekf::resetGyroBiasCov()
+{
+	// Zero the corresponding covariances and set
+	// variances to the values use for initial alignment
+	P.uncorrelateCovarianceSetVariance<State::gyro_bias.dof>(State::gyro_bias.idx, sq(_params.switch_on_gyro_bias));
 }
 
 void Ekf::resetAccelBias()
@@ -440,6 +498,7 @@ void Ekf::get_innovation_test_status(uint16_t &status, float &mag, float &vel, f
 #endif // CONFIG_EKF2_SIDESLIP
 }
 
+// return a bitmask integer that describes which state estimates are valid
 void Ekf::get_ekf_soln_status(uint16_t *status) const
 {
 	ekf_solution_status_u soln_status{};
@@ -635,6 +694,53 @@ void Ekf::updateGroundEffect()
 }
 #endif // CONFIG_EKF2_BAROMETER
 
+void Ekf::resetQuatStateYaw(float yaw, float yaw_variance)
+{
+	// save a copy of the quaternion state for later use in calculating the amount of reset change
+	const Quatf quat_before_reset = _state.quat_nominal;
+
+	// update the yaw angle variance
+	if (PX4_ISFINITE(yaw_variance) && (yaw_variance > FLT_EPSILON)) {
+		P.uncorrelateCovarianceSetVariance<1>(2, yaw_variance);
+	}
+
+	// update transformation matrix from body to world frame using the current estimate
+	// update the rotation matrix using the new yaw value
+	_R_to_earth = updateYawInRotMat(yaw, Dcmf(_state.quat_nominal));
+
+	// calculate the amount that the quaternion has changed by
+	const Quatf quat_after_reset(_R_to_earth);
+	const Quatf q_error((quat_after_reset * quat_before_reset.inversed()).normalized());
+
+	// update quaternion states
+	_state.quat_nominal = quat_after_reset;
+
+	// add the reset amount to the output observer buffered data
+	_output_predictor.resetQuaternion(q_error);
+
+#if defined(CONFIG_EKF2_EXTERNAL_VISION)
+	// update EV attitude error filter
+	if (_ev_q_error_initialized) {
+		const Quatf ev_q_error_updated = (q_error * _ev_q_error_filt.getState()).normalized();
+		_ev_q_error_filt.reset(ev_q_error_updated);
+	}
+#endif // CONFIG_EKF2_EXTERNAL_VISION
+
+	// record the state change
+	if (_state_reset_status.reset_count.quat == _state_reset_count_prev.quat) {
+		_state_reset_status.quat_change = q_error;
+
+	} else {
+		// there's already a reset this update, accumulate total delta
+		_state_reset_status.quat_change = q_error * _state_reset_status.quat_change;
+		_state_reset_status.quat_change.normalize();
+	}
+
+	_state_reset_status.reset_count.quat++;
+
+	_time_last_heading_fuse = _time_delayed_us;
+}
+
 #if defined(CONFIG_EKF2_WIND)
 void Ekf::resetWind()
 {
@@ -658,6 +764,11 @@ void Ekf::resetWindToZero()
 	resetWindCov();
 }
 
+void Ekf::resetWindCov()
+{
+	// start with a small initial uncertainty to improve the initial estimate
+	P.uncorrelateCovarianceSetVariance<State::wind_vel.dof>(State::wind_vel.idx, sq(_params.initial_wind_uncertainty));
+}
 #endif // CONFIG_EKF2_WIND
 
 void Ekf::updateIMUBiasInhibit(const imuSample &imu_delayed)

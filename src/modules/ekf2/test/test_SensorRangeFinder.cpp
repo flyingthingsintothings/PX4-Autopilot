@@ -34,10 +34,10 @@
 #include <gtest/gtest.h>
 #include <math.h>
 #include "EKF/common.h"
-#include "EKF/aid_sources/range_finder/sensor_range_finder.hpp"
+#include "EKF/sensor_range_finder.hpp"
 #include <matrix/math.hpp>
 
-using estimator::sensor::rangeSample;
+using estimator::rangeSample;
 using matrix::Dcmf;
 using matrix::Eulerf;
 using namespace estimator::sensor;

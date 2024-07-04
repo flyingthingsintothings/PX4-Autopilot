@@ -70,6 +70,7 @@ static constexpr uint64_t BARO_MAX_INTERVAL     = 200e3;  ///< Maximum allowable
 static constexpr uint64_t EV_MAX_INTERVAL       = 200e3;  ///< Maximum allowable time interval between external vision system measurements (uSec)
 static constexpr uint64_t GNSS_MAX_INTERVAL     = 500e3;  ///< Maximum allowable time interval between GNSS measurements (uSec)
 static constexpr uint64_t GNSS_YAW_MAX_INTERVAL = 1500e3; ///< Maximum allowable time interval between GNSS yaw measurements (uSec)
+static constexpr uint64_t RNG_MAX_INTERVAL      = 200e3;  ///< Maximum allowable time interval between range finder measurements (uSec)
 static constexpr uint64_t MAG_MAX_INTERVAL      = 500e3;  ///< Maximum allowable time interval between magnetic field measurements (uSec)
 
 // bad accelerometer detection and mitigation
@@ -101,8 +102,7 @@ enum MagFuseType : uint8_t {
 	// Integer definitions for mag_fusion_type
 	AUTO    = 0,   	///< The selection of either heading or 3D magnetometer fusion will be automatic
 	HEADING = 1,   	///< Simple yaw angle fusion will always be used. This is less accurate, but less affected by earth field distortions. It should not be used for pitch angles outside the range from -60 to +60 deg
-	NONE    = 5,   	///< Do not use magnetometer under any circumstance.
-	INIT    = 6     ///< Use the mag for heading initialization only.
+	NONE    = 5    	///< Do not use magnetometer under any circumstance..
 };
 #endif // CONFIG_EKF2_MAGNETOMETER
 
@@ -195,6 +195,12 @@ struct baroSample {
 	uint64_t    time_us{};  ///< timestamp of the measurement (uSec)
 	float       hgt{};      ///< pressure altitude above sea level (m)
 	bool        reset{false};
+};
+
+struct rangeSample {
+	uint64_t    time_us{};  ///< timestamp of the measurement (uSec)
+	float       rng{};      ///< range (distance to ground) measurement (m)
+	int8_t      quality{};  ///< Signal quality in percent (0...100%), where 0 = invalid signal, 100 = perfect signal, and -1 = unknown signal quality.
 };
 
 struct airspeedSample {

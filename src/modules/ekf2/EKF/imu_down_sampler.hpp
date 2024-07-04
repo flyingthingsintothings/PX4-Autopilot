@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2022 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2019-2023 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,37 +32,48 @@
  ****************************************************************************/
 
 /**
- * @file zero_innovation_heading_update.cpp
- * Control function for ekf heading update when at rest or no other heading source available
+ * Downsamples IMU data to a lower rate such that EKF predicition can happen less frequent
+ * @author Kamil Ritz <ka.ritz@hotmail.com>
  */
+#ifndef EKF_IMU_DOWN_SAMPLER_HPP
+#define EKF_IMU_DOWN_SAMPLER_HPP
 
-#include "ekf.h"
+#include <mathlib/mathlib.h>
+#include <matrix/math.hpp>
 
-void Ekf::controlZeroInnovationHeadingUpdate()
+#include "../common.h"
+
+using namespace estimator;
+
+class ImuDownSampler
 {
-	const bool yaw_aiding = _control_status.flags.mag_hdg || _control_status.flags.mag_3D
-				|| _control_status.flags.ev_yaw || _control_status.flags.gps_yaw;
+public:
+	explicit ImuDownSampler(int32_t &target_dt_us);
+	~ImuDownSampler() = default;
 
-	// fuse zero innovation at a limited rate if the yaw variance is too large
-	if(!yaw_aiding
-	    && isTimedOut(_time_last_heading_fuse, (uint64_t)200'000)) {
+	bool update(const imuSample &imu_sample_new);
 
-		// Use an observation variance larger than usual but small enough
-		// to constrain the yaw variance just below the threshold
-		const float obs_var = _control_status.flags.tilt_align ? 0.25f : 0.001f;
-
-		estimator_aid_source1d_s aid_src_status{};
-		aid_src_status.observation = getEulerYaw(_state.quat_nominal);
-		aid_src_status.observation_variance = obs_var;
-		aid_src_status.innovation = 0.f;
-
-		VectorState H_YAW;
-
-		computeYawInnovVarAndH(obs_var, aid_src_status.innovation_variance, H_YAW);
-
-		if (!_control_status.flags.tilt_align || (aid_src_status.innovation_variance - obs_var) > sq(_params.mag_heading_noise)) {
-			// The yaw variance is too large, fuse fake measurement
-			fuseYaw(aid_src_status, H_YAW);
-		}
+	imuSample getDownSampledImuAndTriggerReset()
+	{
+		imuSample imu{_imu_down_sampled};
+		reset();
+		return imu;
 	}
-}
+
+private:
+	void reset();
+
+	imuSample _imu_down_sampled{};
+	Quatf _delta_angle_accumulated{};
+
+	int _accumulated_samples{0};
+	int _required_samples{1};
+
+	int32_t &_target_dt_us;
+
+	float _target_dt_s{0.010f};
+	float _min_dt_s{0.005f};
+
+	float _delta_ang_dt_avg{0.005f};
+};
+#endif // !EKF_IMU_DOWN_SAMPLER_HPP

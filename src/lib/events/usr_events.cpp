@@ -44,7 +44,7 @@
 namespace events
 {
 
-void send(event_s &event)
+void send(EventType &event)
 {
 	eventiocsend_t data = {event};
 	boardctl(EVENTSIOCSEND, reinterpret_cast<unsigned long>(&data));

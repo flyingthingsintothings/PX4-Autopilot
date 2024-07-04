@@ -441,11 +441,10 @@ void VectorNav::sensorCallback(VnUartPacket *packet)
 			sensor_gps.altitude_msl_m = positionGpsLla.c[2];
 			sensor_gps.altitude_ellipsoid_m = sensor_gps.altitude_msl_m;
 
-			sensor_gps.vel_m_s = matrix::Vector3f(velocityGpsNed.c).length();
+			sensor_gps.vel_ned_valid = true;
 			sensor_gps.vel_n_m_s = velocityGpsNed.c[0];
 			sensor_gps.vel_e_m_s = velocityGpsNed.c[1];
 			sensor_gps.vel_d_m_s = velocityGpsNed.c[2];
-			sensor_gps.vel_ned_valid = true;
 
 			sensor_gps.hdop = dop.hDOP;
 			sensor_gps.vdop = dop.vDOP;
@@ -832,7 +831,7 @@ Serial bus driver for the VectorNav VN-100, VN-200, VN-300.
 
 Most boards are configured to enable/start the driver on a specified UART using the SENS_VN_CFG parameter.
 
-Setup/usage information: https://docs.px4.io/main/en/sensor/vectornav.html
+Setup/usage information: https://docs.px4.io/master/en/sensor/vectornav.html
 
 ### Examples
 

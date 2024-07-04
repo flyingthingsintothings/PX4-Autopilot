@@ -66,7 +66,6 @@ void DifferentialDrive::Run()
 	if (should_exit()) {
 		ScheduleClear();
 		exit_and_cleanup();
-		return;
 	}
 
 	hrt_abstime now = hrt_absolute_time();

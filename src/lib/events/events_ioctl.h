@@ -47,5 +47,5 @@
 
 #define EVENTSIOCSEND _EVENTSIOC(1)
 typedef struct eventiocsend {
-	event_s &event;
+	events::EventType &event;
 } eventiocsend_t;
