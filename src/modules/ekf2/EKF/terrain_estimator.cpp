@@ -38,8 +38,8 @@
  */
 
 #include "ekf.h"
-#include "terrain_estimator/derivation/generated/terr_est_compute_flow_xy_innov_var_and_hx.h"
-#include "terrain_estimator/derivation/generated/terr_est_compute_flow_y_innov_var_and_h.h"
+#include "python/ekf_derivation/generated/terr_est_compute_flow_xy_innov_var_and_hx.h"
+#include "python/ekf_derivation/generated/terr_est_compute_flow_y_innov_var_and_h.h"
 
 #include <mathlib/mathlib.h>
 
@@ -205,6 +205,8 @@ void Ekf::stopHaglRngFusion()
 		ECL_INFO("stopping HAGL range fusion");
 
 		// reset flags
+		resetEstimatorAidStatus(_aid_src_terrain_range_finder);
+
 		_innov_check_fail_status.flags.reject_hagl = false;
 
 		_hagl_sensor_status.flags.range_finder = false;
@@ -219,19 +221,30 @@ void Ekf::updateHaglRng(estimator_aid_source1d_s &aid_src) const
 	// predict the hagl from the vehicle position and terrain height
 	const float pred_hagl = _terrain_vpos - _state.pos(2);
 
+	// calculate the innovation
+	const float hagl_innov = pred_hagl - meas_hagl;
+
 	// calculate the observation variance adding the variance of the vehicles own height uncertainty
 	const float obs_variance = getRngVar();
 
 	// calculate the innovation variance - limiting it to prevent a badly conditioned fusion
 	const float hagl_innov_var = fmaxf(_terrain_var + obs_variance, obs_variance);
 
-	updateAidSourceStatus(aid_src,
-		_time_delayed_us,                          // sample timestamp
-		meas_hagl,                                 // observation
-		obs_variance,                              // observation variance
-		pred_hagl - meas_hagl,                     // innovation
-		hagl_innov_var,                            // innovation variance
-		math::max(_params.range_innov_gate, 1.f)); // innovation gate
+	// perform an innovation consistency check and only fuse data if it passes
+	const float innov_gate = fmaxf(_params.range_innov_gate, 1.0f);
+
+
+	aid_src.timestamp_sample = _time_delayed_us; // TODO
+
+	aid_src.observation = meas_hagl;
+	aid_src.observation_variance = obs_variance;
+
+	aid_src.innovation = hagl_innov;
+	aid_src.innovation_variance = hagl_innov_var;
+
+	setEstimatorAidStatusTestRatio(aid_src, innov_gate);
+
+	aid_src.fused = false;
 }
 
 void Ekf::fuseHaglRng(estimator_aid_source1d_s &aid_src)
@@ -316,6 +329,7 @@ void Ekf::stopHaglFlowFusion()
 		ECL_INFO("stopping HAGL flow fusion");
 
 		_hagl_sensor_status.flags.flow = false;
+		resetEstimatorAidStatus(_aid_src_terrain_optical_flow);
 	}
 }
 
@@ -352,6 +366,9 @@ void Ekf::fuseFlowForTerrain(estimator_aid_source2d_s &flow)
 		_terrain_var = 100.0f;
 		return;
 	}
+
+	// run the innovation consistency check and record result
+	setEstimatorAidStatusTestRatio(flow, math::max(_params.flow_innov_gate, 1.f));
 
 	_innov_check_fail_status.flags.reject_optflow_X = (flow.test_ratio[0] > 1.f);
 	_innov_check_fail_status.flags.reject_optflow_Y = (flow.test_ratio[1] > 1.f);

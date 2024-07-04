@@ -42,7 +42,7 @@
 #ifndef EKF_SENSOR_HPP
 #define EKF_SENSOR_HPP
 
-#include <cstdint>
+#include "common.h"
 
 namespace estimator
 {

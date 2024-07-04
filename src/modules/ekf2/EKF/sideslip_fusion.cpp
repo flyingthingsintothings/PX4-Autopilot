@@ -49,10 +49,8 @@
 
 void Ekf::controlBetaFusion(const imuSample &imu_delayed)
 {
-	_control_status.flags.fuse_beta = _params.beta_fusion_enabled
-					  && _control_status.flags.fixed_wing
-					  && _control_status.flags.in_air
-					  && !_control_status.flags.fake_pos;
+	_control_status.flags.fuse_beta = _params.beta_fusion_enabled && _control_status.flags.fixed_wing
+		&& _control_status.flags.in_air && !_control_status.flags.fake_pos;
 
 	if (_control_status.flags.fuse_beta) {
 
@@ -78,22 +76,26 @@ void Ekf::controlBetaFusion(const imuSample &imu_delayed)
 	}
 }
 
-void Ekf::updateSideslip(estimator_aid_source1d_s &aid_src) const
+void Ekf::updateSideslip(estimator_aid_source1d_s &sideslip) const
 {
-	float observation = 0.f;
-	const float R = math::max(sq(_params.beta_noise), sq(0.01f)); // observation noise variance
+	// reset flags
+	resetEstimatorAidStatus(sideslip);
 
-	float innov;
-	float innov_var;
+	const float R = sq(_params.beta_noise); // observation noise variance
+
+	float innov = 0.f;
+	float innov_var = 0.f;
 	sym::ComputeSideslipInnovAndInnovVar(_state.vector(), P, R, FLT_EPSILON, &innov, &innov_var);
 
-	updateAidSourceStatus(aid_src,
-				 _time_delayed_us,                         // sample timestamp
-				 observation,                              // observation
-				 R,                                        // observation variance
-				 innov,                                    // innovation
-				 innov_var,                                // innovation variance
-				 math::max(_params.beta_innov_gate, 1.f)); // innovation gate
+	sideslip.observation = 0.f;
+	sideslip.observation_variance = R;
+	sideslip.innovation = innov;
+	sideslip.innovation_variance = innov_var;
+
+	sideslip.timestamp_sample = _time_delayed_us;
+
+	const float innov_gate = fmaxf(_params.beta_innov_gate, 1.f);
+	setEstimatorAidStatusTestRatio(sideslip, innov_gate);
 }
 
 void Ekf::fuseSideslip(estimator_aid_source1d_s &sideslip)
@@ -101,7 +103,6 @@ void Ekf::fuseSideslip(estimator_aid_source1d_s &sideslip)
 	if (sideslip.innovation_rejected) {
 		return;
 	}
-
 	// determine if we need the sideslip fusion to correct states other than wind
 	bool update_wind_only = !_control_status.flags.wind_dead_reckoning;
 
