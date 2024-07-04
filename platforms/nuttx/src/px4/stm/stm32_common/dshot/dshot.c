@@ -82,7 +82,7 @@ static uint8_t dshot_burst_buffer_array[DSHOT_TIMERS * DSHOT_BURST_BUFFER_SIZE(M
 px4_cache_aligned_data() = {};
 static uint32_t *dshot_burst_buffer[DSHOT_TIMERS] = {};
 
-int up_dshot_init(uint32_t channel_mask, unsigned dshot_pwm_freq, bool enable_bidirectional_dshot)
+int up_dshot_init(uint32_t channel_mask, unsigned dshot_pwm_freq)
 {
 	unsigned buffer_offset = 0;
 

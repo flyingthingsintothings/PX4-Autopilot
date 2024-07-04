@@ -74,11 +74,6 @@ bool SerialImpl::configure()
 	int speed;
 
 	switch (_baudrate) {
-	case 0:
-		// special case, if baudrate is 0 it hangs entire system
-		PX4_ERR("baudrate not specified");
-		return false;
-
 	case 9600:   speed = B9600;   break;
 
 	case 19200:  speed = B19200;  break;
@@ -272,11 +267,11 @@ ssize_t SerialImpl::readAtLeast(uint8_t *buffer, size_t buffer_size, size_t char
 		fds[0].fd = _serial_fd;
 		fds[0].events = POLLIN;
 
-		hrt_abstime elapsed_time_us = hrt_elapsed_time(&start_time_us);
+		hrt_abstime remaining_time = timeout_us - hrt_elapsed_time(&start_time_us);
 
-		if (elapsed_time_us > timeout_us) { break; }
+		if (remaining_time <= 0) { break; }
 
-		int ret = poll(fds, sizeof(fds) / sizeof(fds[0]), (timeout_us - elapsed_time_us) / 1000);
+		int ret = poll(fds, sizeof(fds) / sizeof(fds[0]), remaining_time);
 
 		if (ret > 0) {
 			if (fds[0].revents & POLLIN) {
