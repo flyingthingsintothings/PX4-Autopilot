@@ -271,16 +271,9 @@ void AutopilotTester::execute_mission()
 	REQUIRE(poll_condition_with_timeout(
 	[this]() { return _mission->start_mission() == Mission::Result::Success; }, std::chrono::seconds(3)));
 
-	float speed_factor = 1.0f;
+	// TODO: Adapt time limit based on mission size, flight speed, sim speed factor, etc.
 
-	if (_info != nullptr) {
-		speed_factor = _info->get_speed_factor().second;
-	}
-
-	const float mission_finish_waiting_time_in_simulation_s = 500.f;
-	float mission_finish_waiting_time_in_real_s = mission_finish_waiting_time_in_simulation_s / speed_factor;
-
-	wait_for_mission_finished(std::chrono::seconds(static_cast<int>(mission_finish_waiting_time_in_real_s)));
+	wait_for_mission_finished(std::chrono::seconds(90));
 }
 
 void AutopilotTester::execute_mission_and_lose_gps()
@@ -395,16 +388,9 @@ void AutopilotTester::execute_mission_raw()
 {
 	REQUIRE(_mission->start_mission() == Mission::Result::Success);
 
-	float speed_factor = 1.0f;
+	// TODO: Adapt time limit based on mission size, flight speed, sim speed factor, etc.
 
-	if (_info != nullptr) {
-		speed_factor = _info->get_speed_factor().second;
-	}
-
-	const float waiting_time_simulation_time_s = 300.f; // currently this is tuned for the VTOL wind test
-	float waiting_time_absolute_s = waiting_time_simulation_time_s / speed_factor;
-
-	wait_for_mission_raw_finished(std::chrono::seconds(static_cast<int>(waiting_time_absolute_s)));
+	wait_for_mission_raw_finished(std::chrono::seconds(120));
 }
 
 void AutopilotTester::execute_rtl()
