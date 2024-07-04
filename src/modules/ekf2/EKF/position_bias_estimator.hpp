@@ -39,6 +39,7 @@
 #define EKF_POSITION_BIAS_ESTIMATOR_HPP
 
 #include "bias_estimator.hpp"
+#include "common.h"
 
 class PositionBiasEstimator
 {
