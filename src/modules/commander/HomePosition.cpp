@@ -34,8 +34,6 @@
 
 #include "HomePosition.hpp"
 
-#include <math.h>
-
 #include <lib/geo/geo.h>
 #include "commander_helper.h"
 
@@ -85,8 +83,7 @@ bool HomePosition::hasMovedFromCurrentHomeLocation()
 		}
 	}
 
-	return (home_dist_xy > fmaxf(eph * 2.f, kMinHomePositionChangeEPH))
-	       || (home_dist_z > fmaxf(epv * 2.f, kMinHomePositionChangeEPV));
+	return (home_dist_xy > eph * 2.f) || (home_dist_z > epv * 2.f);
 }
 
 bool HomePosition::setHomePosition(bool force)

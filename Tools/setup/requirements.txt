@@ -1,4 +1,5 @@
 argcomplete
+argparse>=1.2
 cerberus
 coverage
 empy==3.3.4
